@@ -21,11 +21,8 @@ export default function Home() {
 
           <div className="mt-10 flex flex-wrap gap-3">
             <a
-              href={
-                process.env.NEXT_PUBLIC_WHATSAPP_LINK ||
-                "#"
-              }
-              className="rounded-full bg-black px-6 py-3 text-sm font-medium text-white transition hover:bg-neutral-800"
+              href={process.env.NEXT_PUBLIC_WHATSAPP_LINK || "#"}
+              className="rounded-full bg-black px-6 py-3 text-sm font-medium !text-white transition hover:bg-neutral-800"
             >
               Order on WhatsApp
             </a>
