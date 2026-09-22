@@ -1,0 +1,30 @@
+{
+  "name": "offmenu",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start"
+  },
+  "dependencies": {
+    "@libsql/client": "^0.15.15",
+    "dotenv": "^18.0.3",
+    "drizzle-orm": "^0.44.5",
+    "jose": "^6.0.11",
+    "next": "^15.5.4",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@types/node": "^22.15.30",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.7",
+    "drizzle-kit": "^0.31.4",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^4.1.13",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.2"
+  }
+}
