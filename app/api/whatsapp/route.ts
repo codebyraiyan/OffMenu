@@ -2,11 +2,13 @@ import { NextResponse } from "next/server";
 import { and, asc, eq, inArray } from "drizzle-orm";
 
 import { db } from "@/db";
+
 import {
   restaurants,
   menuItems,
   orders,
-  orderItems
+  orderItems,
+  processedWhatsappMessages
 } from "@/db/schema";
 
 import {
@@ -155,6 +157,12 @@ export async function POST(request: Request) {
 
     const message = value?.messages?.[0];
 
+    /*
+     * Ignore webhook events that do not contain
+     * an actual incoming WhatsApp message.
+     *
+     * Meta sends other webhook events too.
+     */
     if (!message) {
       return NextResponse.json({
         received: true
@@ -167,6 +175,59 @@ export async function POST(request: Request) {
       return NextResponse.json({
         received: true
       });
+    }
+
+    /*
+     * IDEMPOTENCY
+     *
+     * Every WhatsApp message has a unique Meta message ID.
+     *
+     * Meta can retry webhook deliveries. If the same message
+     * reaches us again, the primary key on
+     * processedWhatsappMessages prevents us from processing
+     * it twice.
+     *
+     * We intentionally insert BEFORE processing the message.
+     * The primary key makes this atomic at the database level.
+     */
+    const messageId = message.id;
+
+    if (messageId) {
+      try {
+        await db
+          .insert(processedWhatsappMessages)
+          .values({
+            messageId
+          });
+      } catch (error) {
+        /*
+         * A duplicate primary-key insert means Meta delivered
+         * the exact same message again.
+         *
+         * Return 200 immediately so Meta stops retrying it.
+         */
+        const errorMessage =
+          error instanceof Error
+            ? error.message.toLowerCase()
+            : "";
+
+        if (
+          errorMessage.includes("unique") ||
+          errorMessage.includes("primary") ||
+          errorMessage.includes("constraint")
+        ) {
+          console.log(
+            `Ignoring duplicate WhatsApp message: ${messageId}`
+          );
+
+          return NextResponse.json({
+            received: true,
+            duplicate: true
+          });
+        }
+
+        throw error;
+      }
     }
 
     const session = await getSession(phone);
@@ -560,7 +621,8 @@ export async function POST(request: Request) {
           ? null
           : text || null;
 
-      session.state = "WAITING_FOR_ADDRESS";
+      session.state =
+        "WAITING_FOR_ADDRESS";
 
       await saveSession(session);
 
@@ -636,11 +698,14 @@ export async function POST(request: Request) {
       }
 
       session.deliveryAddress = text;
-      session.state = "WAITING_FOR_CONFIRMATION";
+      session.state =
+        "WAITING_FOR_CONFIRMATION";
 
       await saveSession(session);
 
-      const subtotal = cartTotal(session.cart);
+      const subtotal = cartTotal(
+        session.cart
+      );
 
       await sendButtons(
         phone,
@@ -705,7 +770,8 @@ export async function POST(request: Request) {
         )
         .limit(1);
 
-      const restaurant = restaurantRows[0];
+      const restaurant =
+        restaurantRows[0];
 
       if (!restaurant) {
         await sendText(
@@ -849,63 +915,80 @@ export async function POST(request: Request) {
        */
 
       const createdOrder =
-        await db.transaction(async (tx) => {
-          const createdOrders =
-            await tx
-              .insert(orders)
-              .values({
-                orderNumber,
-                restaurantId:
-                  restaurant.id,
-                customerPhone:
-                  phone,
-                deliveryAddress:
-                  session.deliveryAddress!,
-                customerNote:
-                  session.customerNote,
-                subtotal,
-                platformFee,
-                total: subtotal,
-                paymentMethod:
-                  "COD_OR_UPI",
-                status: "PLACED"
-              })
-              .returning();
+        await db.transaction(
+          async (tx) => {
+            const createdOrders =
+              await tx
+                .insert(orders)
+                .values({
+                  orderNumber,
 
-          const order =
-            createdOrders[0];
+                  restaurantId:
+                    restaurant.id,
 
-          if (!order) {
-            throw new Error(
-              "Order creation failed."
-            );
+                  customerPhone:
+                    phone,
+
+                  deliveryAddress:
+                    session.deliveryAddress!,
+
+                  customerNote:
+                    session.customerNote,
+
+                  subtotal,
+
+                  platformFee,
+
+                  total: subtotal,
+
+                  paymentMethod:
+                    "COD_OR_UPI",
+
+                  status: "PLACED"
+                })
+                .returning();
+
+            const order =
+              createdOrders[0];
+
+            if (!order) {
+              throw new Error(
+                "Order creation failed."
+              );
+            }
+
+            for (
+              const item of verifiedCart
+            ) {
+              await tx
+                .insert(orderItems)
+                .values({
+                  orderId:
+                    order.id,
+
+                  menuItemId:
+                    item.menuItemId,
+
+                  itemName:
+                    item.name,
+
+                  quantity:
+                    item.quantity,
+
+                  unitPrice:
+                    item.price,
+
+                  note: null,
+
+                  total:
+                    item.price *
+                    item.quantity
+                });
+            }
+
+            return order;
           }
-
-          for (
-            const item of verifiedCart
-          ) {
-            await tx
-              .insert(orderItems)
-              .values({
-                orderId:
-                  order.id,
-                menuItemId:
-                  item.menuItemId,
-                itemName:
-                  item.name,
-                quantity:
-                  item.quantity,
-                unitPrice:
-                  item.price,
-                note: null,
-                total:
-                  item.price *
-                  item.quantity
-              });
-          }
-
-          return order;
-        });
+        );
 
       const restaurantPhone =
         restaurant.whatsapp ||
@@ -939,7 +1022,9 @@ export async function POST(request: Request) {
           restaurantPhone,
           restaurantMessage
         );
-      } catch (notificationError) {
+      } catch (
+        notificationError
+      ) {
         console.error(
           "Restaurant WhatsApp notification failed:",
           notificationError
@@ -949,7 +1034,7 @@ export async function POST(request: Request) {
       await sendText(
         phone,
         `✅ ORDER CONFIRMED\n\n` +
-          `Order: ${orderNumber}\n` +
+          `Order: ${createdOrder.orderNumber}\n` +
           `Restaurant: ${restaurant.name}\n\n` +
           `${formatCart(
             verifiedCart
@@ -976,7 +1061,8 @@ export async function POST(request: Request) {
 
       return NextResponse.json({
         received: true,
-        orderNumber
+        orderNumber:
+          createdOrder.orderNumber
       });
     }
 

@@ -75,7 +75,9 @@ export const menuItems = sqliteTable("menu_items", {
     .notNull()
     .default(true),
 
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: integer("created_at", {
+    mode: "timestamp"
+  })
     .notNull()
     .$defaultFn(() => new Date())
 });
@@ -113,7 +115,9 @@ export const orders = sqliteTable("orders", {
     .notNull()
     .default("PLACED"),
 
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: integer("created_at", {
+    mode: "timestamp"
+  })
     .notNull()
     .$defaultFn(() => new Date())
 });
@@ -171,6 +175,26 @@ export const whatsappSessions = sqliteTable(
     deliveryAddress: text("delivery_address"),
 
     updatedAt: integer("updated_at", {
+      mode: "timestamp"
+    })
+      .notNull()
+      .$defaultFn(() => new Date())
+  }
+);
+
+/*
+ * WhatsApp webhook idempotency.
+ *
+ * Meta can retry webhook events. We store every WhatsApp
+ * message ID we have processed so the same event can never
+ * be handled twice.
+ */
+export const processedWhatsappMessages = sqliteTable(
+  "processed_whatsapp_messages",
+  {
+    messageId: text("message_id").primaryKey(),
+
+    processedAt: integer("processed_at", {
       mode: "timestamp"
     })
       .notNull()
