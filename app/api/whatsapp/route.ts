@@ -160,8 +160,6 @@ export async function POST(request: Request) {
     /*
      * Ignore webhook events that do not contain
      * an actual incoming WhatsApp message.
-     *
-     * Meta sends other webhook events too.
      */
     if (!message) {
       return NextResponse.json({
@@ -186,9 +184,6 @@ export async function POST(request: Request) {
      * reaches us again, the primary key on
      * processedWhatsappMessages prevents us from processing
      * it twice.
-     *
-     * We intentionally insert BEFORE processing the message.
-     * The primary key makes this atomic at the database level.
      */
     const messageId = message.id;
 
@@ -801,10 +796,6 @@ export async function POST(request: Request) {
 
       /*
        * Re-check every cart item against the database.
-       *
-       * We do not trust the price/name stored in the
-       * WhatsApp session because the menu may have changed
-       * while the customer was checking out.
        */
 
       const cartItemIds = session.cart.map(
@@ -1031,11 +1022,16 @@ export async function POST(request: Request) {
         );
       }
 
+      /*
+       * CUSTOMER CONFIRMATION
+       */
+
       await sendText(
         phone,
         `✅ ORDER CONFIRMED\n\n` +
-          `Order: ${createdOrder.orderNumber}\n` +
-          `Restaurant: ${restaurant.name}\n\n` +
+          `Order: ${orderNumber}\n` +
+          `Restaurant: ${restaurant.name}\n` +
+          `📞 Contact: ${restaurant.phone}\n\n` +
           `${formatCart(
             verifiedCart
           )}\n\n` +
