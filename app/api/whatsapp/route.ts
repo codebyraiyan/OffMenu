@@ -1515,35 +1515,41 @@ export async function POST(
 
         );
 
+      const confirmationButtons =
+        subtotal < 150
+          ? [
+              {
+                id: "confirm_order",
+                title: "Confirm Order"
+              },
+              {
+                id: "add_items_to_order",
+                title: "Add Items"
+              },
+              {
+                id: "cancel_order",
+                title: "Cancel"
+              }
+            ]
+          : [
+              {
+                id: "confirm_order",
+                title: "Confirm Order"
+              },
+              {
+                id: "cancel_order",
+                title: "Cancel"
+              }
+            ];
+
       await sendButtons(
-
         phone,
-
         `Please confirm your order.\n\n${formatCart(
           session.cart
         )}\n\n${formatCheckoutFees(
           subtotal
         )}\nPayment: Cash or UPI directly to the restaurant.\n\nDelivery address:\n${session.deliveryAddress}`,
-        [
-
-          {
-
-            id: "confirm_order",
-
-            title: "Confirm Order"
-
-          },
-
-          {
-
-            id: "cancel_order",
-
-            title: "Cancel"
-
-          }
-
-        ]
-
+        confirmationButtons
       );
 
       return NextResponse.json({
@@ -1552,6 +1558,46 @@ export async function POST(
 
       });
 
+    }
+
+    /*
+
+     * ADD ITEMS TO ORDER
+
+     */
+
+    if (
+
+      interactiveId ===
+
+      "add_items_to_order"
+
+    ) {
+      if (!session.restaurantId) {
+        await showRestaurants(
+          phone
+        );
+
+        return NextResponse.json({
+          received: true
+        });
+      }
+
+      session.state =
+        "CHOOSING_ITEM";
+
+      await saveSession(
+        session
+      );
+
+      await showRestaurantMenu(
+        phone,
+        session.restaurantId
+      );
+
+      return NextResponse.json({
+        received: true
+      });
     }
 
     /*
