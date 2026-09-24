@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+
 import {
   and,
   desc,
@@ -8,6 +9,7 @@ import {
 } from "drizzle-orm";
 
 import { db } from "@/db";
+
 import {
   restaurants,
   menuItems,
@@ -18,6 +20,13 @@ import {
 import {
   getRestaurantSession
 } from "@/lib/auth";
+
+const BILLABLE_STATUSES = [
+  "ACCEPTED",
+  "PREPARING",
+  "OUT_FOR_DELIVERY",
+  "DELIVERED"
+];
 
 export async function GET(
   request: Request
@@ -92,9 +101,7 @@ export async function GET(
     new Date();
 
   let startDate =
-    new Date(
-      now
-    );
+    new Date(now);
 
   if (range === "hour") {
     startDate.setHours(
@@ -188,18 +195,50 @@ export async function GET(
       })
     );
 
+  /*
+   * Only accepted/active/completed orders
+   * count toward restaurant reconciliation.
+   *
+   * NEW orders have not been accepted yet.
+   * CANCELLED orders do not generate a fee.
+   */
   const billableOrders =
     orderRows.filter(
       (order) =>
-        order.status !==
-        "CANCELLED"
+        BILLABLE_STATUSES.includes(
+          order.status
+        )
     );
 
-  const totalFees =
+  const totalPlatformFees =
     billableOrders.reduce(
       (sum, order) =>
         sum +
         order.platformFee,
+      0
+    );
+
+  const totalDeliveryFees =
+    billableOrders.reduce(
+      (sum, order) =>
+        sum +
+        order.deliveryFee,
+      0
+    );
+
+  const totalFoodValue =
+    billableOrders.reduce(
+      (sum, order) =>
+        sum +
+        order.subtotal,
+      0
+    );
+
+  const totalCustomerValue =
+    billableOrders.reduce(
+      (sum, order) =>
+        sum +
+        order.total,
       0
     );
 
@@ -209,13 +248,23 @@ export async function GET(
       name: restaurant.name,
       isOpen: restaurant.isOpen
     },
+
     menu,
+
     orders:
       ordersWithItems,
+
     feeSummary: {
       orderCount:
         billableOrders.length,
-      totalFees
+
+      totalFoodValue,
+
+      totalDeliveryFees,
+
+      totalPlatformFees,
+
+      totalCustomerValue
     }
   });
 }

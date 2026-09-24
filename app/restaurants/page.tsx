@@ -35,6 +35,7 @@ type Order = {
   deliveryAddress: string;
   customerNote: string | null;
   subtotal: number;
+  deliveryFee: number;
   platformFee: number;
   total: number;
   paymentMethod: string;
@@ -51,6 +52,13 @@ type DashboardData = {
   };
   menu: MenuItem[];
   orders: Order[];
+  feeSummary: {
+    orderCount: number;
+    totalFoodValue: number;
+    totalDeliveryFees: number;
+    totalPlatformFees: number;
+    totalCustomerValue: number;
+  };
 };
 
 const ACTIVE_STATUSES = [
@@ -60,30 +68,16 @@ const ACTIVE_STATUSES = [
   "OUT_FOR_DELIVERY"
 ];
 
-const BILLABLE_STATUSES = [
-  "ACCEPTED",
-  "PREPARING",
-  "OUT_FOR_DELIVERY",
-  "DELIVERED"
-];
-
-const STATUS_LABELS: Record<
-  string,
-  string
-> = {
+const STATUS_LABELS: Record<string, string> = {
   NEW: "New",
   ACCEPTED: "Accepted",
   PREPARING: "Preparing",
-  OUT_FOR_DELIVERY:
-    "Out for delivery",
+  OUT_FOR_DELIVERY: "Out for delivery",
   DELIVERED: "Delivered",
   CANCELLED: "Cancelled"
 };
 
-const STATUS_CLASSES: Record<
-  string,
-  string
-> = {
+const STATUS_CLASSES: Record<string, string> = {
   NEW:
     "bg-red-100 text-red-700 border-red-200",
   ACCEPTED:
@@ -122,6 +116,12 @@ function formatDate(
   );
 }
 
+function formatMoney(
+  value: number
+) {
+  return `₹${value.toLocaleString("en-IN")}`;
+}
+
 export default function RestaurantDashboardPage() {
   const [data, setData] =
     useState<DashboardData | null>(
@@ -147,6 +147,33 @@ export default function RestaurantDashboardPage() {
 
   const [notificationEnabled, setNotificationEnabled] =
     useState(false);
+
+  const [menuSaving, setMenuSaving] =
+    useState(false);
+
+  const [menuError, setMenuError] =
+    useState("");
+
+  const [editingMenuItemId, setEditingMenuItemId] =
+    useState<number | null>(null);
+
+  const [newItemName, setNewItemName] =
+    useState("");
+
+  const [newItemDescription, setNewItemDescription] =
+    useState("");
+
+  const [newItemPrice, setNewItemPrice] =
+    useState("");
+
+  const [editName, setEditName] =
+    useState("");
+
+  const [editDescription, setEditDescription] =
+    useState("");
+
+  const [editPrice, setEditPrice] =
+    useState("");
 
   const previousNewOrderIds =
     useRef<Set<number>>(
@@ -340,6 +367,7 @@ export default function RestaurantDashboardPage() {
       );
 
       oscillator.start();
+
       oscillator.stop(
         context.currentTime + 0.6
       );
@@ -397,12 +425,290 @@ export default function RestaurantDashboardPage() {
     }
   }
 
+  async function addMenuItem() {
+    setMenuError("");
+
+    const name =
+      newItemName.trim();
+
+    const description =
+      newItemDescription.trim();
+
+    const price =
+      Number(newItemPrice);
+
+    if (!name) {
+      setMenuError(
+        "Enter an item name."
+      );
+      return;
+    }
+
+    if (
+      !Number.isFinite(price) ||
+      price <= 0
+    ) {
+      setMenuError(
+        "Enter a valid price."
+      );
+      return;
+    }
+
+    setMenuSaving(true);
+
+    try {
+      const response =
+        await fetch(
+          "/api/restaurants/menu",
+          {
+            method: "POST",
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+            body: JSON.stringify({
+              name,
+              description,
+              price
+            })
+          }
+        );
+
+      const result =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+            "Failed to add menu item."
+        );
+      }
+
+      setNewItemName("");
+      setNewItemDescription("");
+      setNewItemPrice("");
+
+      await loadDashboard(false);
+    } catch (error) {
+      setMenuError(
+        error instanceof Error
+          ? error.message
+          : "Failed to add menu item."
+      );
+    } finally {
+      setMenuSaving(false);
+    }
+  }
+
+  function startEditingMenuItem(
+    item: MenuItem
+  ) {
+    setMenuError("");
+    setEditingMenuItemId(
+      item.id
+    );
+    setEditName(item.name);
+    setEditDescription(
+      item.description || ""
+    );
+    setEditPrice(
+      String(item.price)
+    );
+  }
+
+  function cancelEditingMenuItem() {
+    setEditingMenuItemId(null);
+    setEditName("");
+    setEditDescription("");
+    setEditPrice("");
+  }
+
+  async function saveMenuItem() {
+    if (
+      editingMenuItemId === null
+    ) {
+      return;
+    }
+
+    setMenuError("");
+
+    const name =
+      editName.trim();
+
+    const description =
+      editDescription.trim();
+
+    const price =
+      Number(editPrice);
+
+    if (!name) {
+      setMenuError(
+        "Enter an item name."
+      );
+      return;
+    }
+
+    if (
+      !Number.isFinite(price) ||
+      price <= 0
+    ) {
+      setMenuError(
+        "Enter a valid price."
+      );
+      return;
+    }
+
+    setMenuSaving(true);
+
+    try {
+      const response =
+        await fetch(
+          "/api/restaurants/menu",
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+            body: JSON.stringify({
+              id: editingMenuItemId,
+              name,
+              description,
+              price
+            })
+          }
+        );
+
+      const result =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+            "Failed to update menu item."
+        );
+      }
+
+      cancelEditingMenuItem();
+
+      await loadDashboard(false);
+    } catch (error) {
+      setMenuError(
+        error instanceof Error
+          ? error.message
+          : "Failed to update menu item."
+      );
+    } finally {
+      setMenuSaving(false);
+    }
+  }
+
+  async function toggleMenuItem(
+    item: MenuItem
+  ) {
+    setMenuError("");
+    setMenuSaving(true);
+
+    try {
+      const response =
+        await fetch(
+          "/api/restaurants/menu",
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type":
+                "application/json"
+            },
+            body: JSON.stringify({
+              id: item.id,
+              isAvailable:
+                !item.isAvailable
+            })
+          }
+        );
+
+      const result =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+            "Failed to update availability."
+        );
+      }
+
+      await loadDashboard(false);
+    } catch (error) {
+      setMenuError(
+        error instanceof Error
+          ? error.message
+          : "Failed to update availability."
+      );
+    } finally {
+      setMenuSaving(false);
+    }
+  }
+
+  async function deleteMenuItem(
+    item: MenuItem
+  ) {
+    const confirmed =
+      window.confirm(
+        `Delete "${item.name}" from the menu?`
+      );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setMenuError("");
+    setMenuSaving(true);
+
+    try {
+      const response =
+        await fetch(
+          `/api/restaurants/menu?id=${item.id}`,
+          {
+            method: "DELETE"
+          }
+        );
+
+      const result =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          result.error ||
+            "Failed to delete menu item."
+        );
+      }
+
+      if (
+        editingMenuItemId ===
+        item.id
+      ) {
+        cancelEditingMenuItem();
+      }
+
+      await loadDashboard(false);
+    } catch (error) {
+      setMenuError(
+        error instanceof Error
+          ? error.message
+          : "Failed to delete menu item."
+      );
+    } finally {
+      setMenuSaving(false);
+    }
+  }
+
   if (loading) {
     return (
       <main className="min-h-screen bg-neutral-50 p-6">
         <div className="mx-auto max-w-7xl">
           <div className="animate-pulse">
             <div className="h-8 w-48 rounded bg-neutral-200" />
+
             <div className="mt-3 h-4 w-72 rounded bg-neutral-200" />
 
             <div className="mt-8 grid gap-4 sm:grid-cols-3">
@@ -457,21 +763,6 @@ export default function RestaurantDashboardPage() {
         ACTIVE_STATUSES.includes(
           order.status
         )
-    );
-
-  const billableOrders =
-    data.orders.filter(
-      (order) =>
-        BILLABLE_STATUSES.includes(
-          order.status
-        )
-    );
-
-  const totalFees =
-    billableOrders.reduce(
-      (sum, order) =>
-        sum + order.platformFee,
-      0
     );
 
   return (
@@ -571,7 +862,7 @@ export default function RestaurantDashboardPage() {
         )}
 
         {/* STATS */}
-        <section className="mt-5 grid gap-4 sm:grid-cols-3">
+        <section className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div className="rounded-2xl border border-neutral-200 bg-white p-5">
             <p className="text-sm text-neutral-500">
               New orders
@@ -606,15 +897,98 @@ export default function RestaurantDashboardPage() {
             </p>
 
             <p className="mt-2 text-3xl font-semibold">
-              ₹
-              {totalFees.toLocaleString(
-                "en-IN"
+              {formatMoney(
+                data.feeSummary
+                  .totalPlatformFees
               )}
             </p>
 
             <p className="mt-1 text-xs text-neutral-400">
-              Accepted and completed orders
+              Owed to OffMenu
             </p>
+          </div>
+
+          <div className="rounded-2xl border border-neutral-200 bg-white p-5">
+            <p className="text-sm text-neutral-500">
+              Delivery fees
+            </p>
+
+            <p className="mt-2 text-3xl font-semibold">
+              {formatMoney(
+                data.feeSummary
+                  .totalDeliveryFees
+              )}
+            </p>
+
+            <p className="mt-1 text-xs text-neutral-400">
+              Collected from customers
+            </p>
+          </div>
+        </section>
+
+        {/* RECONCILIATION */}
+        <section className="mt-4 rounded-2xl border border-neutral-200 bg-white p-5">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="font-semibold">
+                Fee summary
+              </h2>
+
+              <p className="mt-1 text-sm text-neutral-500">
+                Based on accepted, active and completed orders in the selected period.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 gap-x-8 gap-y-3 text-sm sm:flex sm:items-center">
+              <div>
+                <p className="text-neutral-400">
+                  Orders
+                </p>
+
+                <p className="font-semibold">
+                  {data.feeSummary.orderCount}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-neutral-400">
+                  Food value
+                </p>
+
+                <p className="font-semibold">
+                  {formatMoney(
+                    data.feeSummary
+                      .totalFoodValue
+                  )}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-neutral-400">
+                  Customer total
+                </p>
+
+                <p className="font-semibold">
+                  {formatMoney(
+                    data.feeSummary
+                      .totalCustomerValue
+                  )}
+                </p>
+              </div>
+
+              <div>
+                <p className="text-neutral-400">
+                  OffMenu
+                </p>
+
+                <p className="font-semibold">
+                  {formatMoney(
+                    data.feeSummary
+                      .totalPlatformFees
+                  )}
+                </p>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -633,6 +1007,7 @@ export default function RestaurantDashboardPage() {
             }`}
           >
             Orders
+
             {newOrders.length > 0 && (
               <span className="ml-2 rounded-full bg-red-600 px-2 py-0.5 text-xs text-white">
                 {newOrders.length}
@@ -746,11 +1121,72 @@ export default function RestaurantDashboardPage() {
               </h2>
 
               <p className="mt-1 text-sm text-neutral-500">
-                Menu availability management
-                will appear here.
+                Manage your menu directly from the restaurant panel.
               </p>
             </div>
 
+            {/* ADD ITEM */}
+            <div className="mt-5 rounded-2xl border border-neutral-200 bg-white p-5">
+              <h3 className="font-semibold">
+                Add menu item
+              </h3>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-[1.2fr_1.5fr_0.7fr_auto]">
+                <input
+                  value={newItemName}
+                  onChange={(event) =>
+                    setNewItemName(
+                      event.target.value
+                    )
+                  }
+                  placeholder="Item name"
+                  className="rounded-xl border border-neutral-300 px-4 py-3 text-sm outline-none focus:border-black"
+                />
+
+                <input
+                  value={newItemDescription}
+                  onChange={(event) =>
+                    setNewItemDescription(
+                      event.target.value
+                    )
+                  }
+                  placeholder="Description (optional)"
+                  className="rounded-xl border border-neutral-300 px-4 py-3 text-sm outline-none focus:border-black"
+                />
+
+                <input
+                  value={newItemPrice}
+                  onChange={(event) =>
+                    setNewItemPrice(
+                      event.target.value
+                    )
+                  }
+                  type="number"
+                  min="1"
+                  step="1"
+                  placeholder="Price"
+                  className="rounded-xl border border-neutral-300 px-4 py-3 text-sm outline-none focus:border-black"
+                />
+
+                <button
+                  onClick={addMenuItem}
+                  disabled={menuSaving}
+                  className="rounded-xl bg-black px-5 py-3 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-50"
+                >
+                  {menuSaving
+                    ? "Saving..."
+                    : "Add item"}
+                </button>
+              </div>
+            </div>
+
+            {menuError && (
+              <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                {menuError}
+              </div>
+            )}
+
+            {/* MENU ITEMS */}
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {data.menu.length === 0 ? (
                 <div className="col-span-full rounded-2xl border border-dashed border-neutral-300 bg-white p-10 text-center">
@@ -759,53 +1195,181 @@ export default function RestaurantDashboardPage() {
                   </p>
 
                   <p className="mt-1 text-sm text-neutral-500">
-                    Add menu items from the admin
-                    panel.
+                    Add your first item above.
                   </p>
                 </div>
               ) : (
                 data.menu.map(
-                  (item) => (
-                    <div
-                      key={item.id}
-                      className="rounded-2xl border border-neutral-200 bg-white p-4"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h3 className="font-medium">
-                            {item.name}
-                          </h3>
+                  (item) => {
+                    const editing =
+                      editingMenuItemId ===
+                      item.id;
 
-                          {item.description && (
-                            <p className="mt-1 text-sm text-neutral-500">
-                              {item.description}
-                            </p>
-                          )}
+                    if (editing) {
+                      return (
+                        <div
+                          key={item.id}
+                          className="rounded-2xl border-2 border-black bg-white p-4 sm:col-span-2 lg:col-span-1"
+                        >
+                          <p className="text-sm font-semibold">
+                            Edit item
+                          </p>
+
+                          <div className="mt-4 space-y-3">
+                            <input
+                              value={editName}
+                              onChange={(event) =>
+                                setEditName(
+                                  event.target.value
+                                )
+                              }
+                              placeholder="Item name"
+                              className="w-full rounded-xl border border-neutral-300 px-4 py-3 text-sm outline-none focus:border-black"
+                            />
+
+                            <textarea
+                              value={editDescription}
+                              onChange={(event) =>
+                                setEditDescription(
+                                  event.target.value
+                                )
+                              }
+                              placeholder="Description"
+                              rows={3}
+                              className="w-full resize-none rounded-xl border border-neutral-300 px-4 py-3 text-sm outline-none focus:border-black"
+                            />
+
+                            <input
+                              value={editPrice}
+                              onChange={(event) =>
+                                setEditPrice(
+                                  event.target.value
+                                )
+                              }
+                              type="number"
+                              min="1"
+                              step="1"
+                              placeholder="Price"
+                              className="w-full rounded-xl border border-neutral-300 px-4 py-3 text-sm outline-none focus:border-black"
+                            />
+
+                            <div className="flex gap-2">
+                              <button
+                                onClick={
+                                  saveMenuItem
+                                }
+                                disabled={
+                                  menuSaving
+                                }
+                                className="flex-1 rounded-xl bg-black px-4 py-3 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-50"
+                              >
+                                Save
+                              </button>
+
+                              <button
+                                onClick={
+                                  cancelEditingMenuItem
+                                }
+                                disabled={
+                                  menuSaving
+                                }
+                                className="rounded-xl border border-neutral-300 bg-white px-4 py-3 text-sm font-medium hover:bg-neutral-100 disabled:opacity-50"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div
+                        key={item.id}
+                        className="rounded-2xl border border-neutral-200 bg-white p-4"
+                      >
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <h3 className="font-medium">
+                              {item.name}
+                            </h3>
+
+                            {item.description && (
+                              <p className="mt-1 text-sm text-neutral-500">
+                                {item.description}
+                              </p>
+                            )}
+                          </div>
+
+                          <span className="whitespace-nowrap text-sm font-semibold">
+                            {formatMoney(
+                              item.price
+                            )}
+                          </span>
                         </div>
 
-                        <span className="whitespace-nowrap text-sm font-semibold">
-                          ₹
-                          {item.price.toLocaleString(
-                            "en-IN"
-                          )}
-                        </span>
-                      </div>
+                        <div className="mt-4 flex items-center justify-between gap-3">
+                          <span
+                            className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                              item.isAvailable
+                                ? "border-green-200 bg-green-50 text-green-700"
+                                : "border-red-200 bg-red-50 text-red-700"
+                            }`}
+                          >
+                            {item.isAvailable
+                              ? "Available"
+                              : "Unavailable"}
+                          </span>
 
-                      <div className="mt-4">
-                        <span
-                          className={`rounded-full border px-3 py-1 text-xs font-medium ${
-                            item.isAvailable
-                              ? "border-green-200 bg-green-50 text-green-700"
-                              : "border-red-200 bg-red-50 text-red-700"
-                          }`}
-                        >
-                          {item.isAvailable
-                            ? "Available"
-                            : "Unavailable"}
-                        </span>
+                          <button
+                            onClick={() =>
+                              toggleMenuItem(
+                                item
+                              )
+                            }
+                            disabled={
+                              menuSaving
+                            }
+                            className="text-sm font-medium underline underline-offset-2 disabled:opacity-50"
+                          >
+                            {item.isAvailable
+                              ? "Mark unavailable"
+                              : "Mark available"}
+                          </button>
+                        </div>
+
+                        <div className="mt-4 flex gap-2">
+                          <button
+                            onClick={() =>
+                              startEditingMenuItem(
+                                item
+                              )
+                            }
+                            disabled={
+                              menuSaving
+                            }
+                            className="flex-1 rounded-xl border border-neutral-300 bg-white px-4 py-2.5 text-sm font-medium hover:bg-neutral-100 disabled:opacity-50"
+                          >
+                            Edit
+                          </button>
+
+                          <button
+                            onClick={() =>
+                              deleteMenuItem(
+                                item
+                              )
+                            }
+                            disabled={
+                              menuSaving
+                            }
+                            className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+                          >
+                            Delete
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  )
+                    );
+                  }
                 )
               )}
             </div>
@@ -880,7 +1444,7 @@ function OrderCard({
           <div>
             <div className="flex flex-wrap items-center gap-2">
               <h3 className="text-lg font-semibold">
-                #{order.orderNumber}
+                {order.orderNumber}
               </h3>
 
               <span
@@ -911,9 +1475,8 @@ function OrderCard({
 
           <div className="text-left sm:text-right">
             <p className="text-xl font-semibold">
-              ₹
-              {order.total.toLocaleString(
-                "en-IN"
+              {formatMoney(
+                order.total
               )}
             </p>
 
@@ -952,9 +1515,8 @@ function OrderCard({
                   </div>
 
                   <p className="whitespace-nowrap text-sm font-medium">
-                    ₹
-                    {item.total.toLocaleString(
-                      "en-IN"
+                    {formatMoney(
+                      item.total
                     )}
                   </p>
                 </div>
@@ -996,6 +1558,58 @@ function OrderCard({
           <p className="mt-1 text-sm text-neutral-500">
             {order.customerPhone}
           </p>
+
+          <div className="mt-5 border-t border-neutral-200 pt-4">
+            <div className="flex justify-between text-sm">
+              <span className="text-neutral-500">
+                Food
+              </span>
+
+              <span className="font-medium">
+                {formatMoney(
+                  order.subtotal
+                )}
+              </span>
+            </div>
+
+            <div className="mt-2 flex justify-between text-sm">
+              <span className="text-neutral-500">
+                Delivery fee
+              </span>
+
+              <span className="font-medium">
+                {order.deliveryFee > 0
+                  ? formatMoney(
+                      order.deliveryFee
+                    )
+                  : "₹0"}
+              </span>
+            </div>
+
+            <div className="mt-3 flex justify-between border-t border-neutral-200 pt-3 text-sm font-semibold">
+              <span>
+                Customer total
+              </span>
+
+              <span>
+                {formatMoney(
+                  order.total
+                )}
+              </span>
+            </div>
+
+            <div className="mt-2 flex justify-between text-xs text-neutral-400">
+              <span>
+                OffMenu fee
+              </span>
+
+              <span>
+                {formatMoney(
+                  order.platformFee
+                )}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 

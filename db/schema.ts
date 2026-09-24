@@ -186,16 +186,48 @@ export const orders = sqliteTable(
       "customer_note"
     ),
 
+    /*
+     * Total value of food ordered
+     * before any delivery fee.
+     */
     subtotal: real(
       "subtotal"
     ).notNull(),
 
+    /*
+     * Delivery fee paid by the customer
+     * to the restaurant/delivery person.
+     *
+     * < ₹150 subtotal = ₹30
+     * ₹150–₹500+ tiers = ₹0
+     */
+    deliveryFee: real(
+      "delivery_fee"
+    )
+      .notNull()
+      .default(0),
+
+    /*
+     * Fee owed by the restaurant
+     * to OffMenu.
+     *
+     * < ₹150 = ₹30
+     * ₹150–₹250 = ₹20
+     * > ₹250–₹500 = ₹30
+     * > ₹500 = ₹50
+     */
     platformFee: real(
       "platform_fee"
     )
       .notNull()
-      .default(30),
+      .default(0),
 
+    /*
+     * Amount paid by the customer
+     * to the restaurant/delivery person.
+     *
+     * total = subtotal + deliveryFee
+     */
     total: real(
       "total"
     ).notNull(),
@@ -208,7 +240,7 @@ export const orders = sqliteTable(
 
     status: text("status")
       .notNull()
-      .default("PLACED"),
+      .default("NEW"),
 
     createdAt: integer(
       "created_at",
@@ -275,13 +307,11 @@ export const orderItems = sqliteTable(
  * restaurant and each calendar day.
  *
  * Example:
- *
  * restaurantId = 23
  * orderDate    = 2026-09-03
  * orderCount   = 3
  *
  * This produces:
- *
  * #023030926003
  *
  * The composite primary key guarantees that
