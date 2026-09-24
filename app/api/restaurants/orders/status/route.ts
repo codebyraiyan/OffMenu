@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
+
 import {
   and,
   eq
 } from "drizzle-orm";
 
 import { db } from "@/db";
+
 import {
   orders,
   restaurants
@@ -315,7 +317,8 @@ export async function POST(
     }
 
     /*
-     * All other status transitions.
+     * All other status transitions update the
+     * order normally.
      */
     await db
       .update(orders)
@@ -335,10 +338,83 @@ export async function POST(
         )
       );
 
+    /*
+     * When the restaurant marks the order
+     * OUT_FOR_DELIVERY, immediately notify
+     * the customer on WhatsApp.
+     *
+     * The database status is updated first.
+     * If WhatsApp fails, the order remains
+     * OUT_FOR_DELIVERY and we return a warning.
+     */
+    if (
+      newStatus ===
+      "OUT_FOR_DELIVERY"
+    ) {
+      const restaurantRows =
+        await db
+          .select()
+          .from(restaurants)
+          .where(
+            eq(
+              restaurants.id,
+              session.restaurantId
+            )
+          )
+          .limit(1);
+
+      const restaurant =
+        restaurantRows[0];
+
+      if (!restaurant) {
+        return NextResponse.json({
+          success: true,
+          status: "OUT_FOR_DELIVERY",
+          warning:
+            "Order marked out for delivery, but restaurant information could not be loaded."
+        });
+      }
+
+      const outForDeliveryMessage =
+        [
+          "🛵 *ORDER OUT FOR DELIVERY*",
+          "",
+          `Order: *#${order.orderNumber}*`,
+          `Restaurant: *${restaurant.name}*`,
+          "",
+          "Your order is on the way! 🛵",
+          "",
+          "Please keep your phone available and be ready to receive your order.",
+          "",
+          "Thank you for ordering with *OffMenu* ❤️"
+        ].join("\n");
+
+      try {
+        await sendText(
+          order.customerPhone,
+          outForDeliveryMessage
+        );
+      } catch {
+        /*
+         * The order is already marked
+         * OUT_FOR_DELIVERY, so we do not
+         * roll back the status if WhatsApp
+         * delivery fails.
+         */
+        return NextResponse.json({
+          success: true,
+          status: "OUT_FOR_DELIVERY",
+          warning:
+            "Order marked out for delivery, but WhatsApp notification could not be sent."
+        });
+      }
+    }
+
     return NextResponse.json({
       success: true,
       status: newStatus
     });
+
   } catch (error) {
     console.error(
       "Restaurant order status error:",
