@@ -1,7 +1,5 @@
 import { NextResponse } from "next/server";
 
-
-
 import {
 
   and,
@@ -16,11 +14,7 @@ import {
 
 } from "drizzle-orm";
 
-
-
 import { db } from "@/db";
-
-
 
 import {
 
@@ -36,8 +30,6 @@ import {
 
 } from "@/db/schema";
 
-
-
 import {
 
   sendButtons,
@@ -49,8 +41,6 @@ import {
   sendText
 
 } from "@/lib/whatsapp";
-
-
 
 import {
 
@@ -64,8 +54,6 @@ import {
 
 } from "@/lib/whatsapp-session";
 
-
-
 import {
 
   getIndiaDateParts,
@@ -75,8 +63,6 @@ import {
   money
 
 } from "@/lib/utils";
-
-
 
 export async function GET(
 
@@ -88,13 +74,9 @@ export async function GET(
 
     new URL(request.url);
 
-
-
   const mode =
 
     searchParams.get("hub.mode");
-
-
 
   const token =
 
@@ -104,8 +86,6 @@ export async function GET(
 
     );
 
-
-
   const challenge =
 
     searchParams.get(
@@ -113,8 +93,6 @@ export async function GET(
       "hub.challenge"
 
     );
-
-
 
   if (
 
@@ -134,8 +112,6 @@ export async function GET(
 
   }
 
-
-
   return new Response(
 
     "Forbidden",
@@ -149,8 +125,6 @@ export async function GET(
   );
 
 }
-
-
 
 function cartTotal(
 
@@ -174,7 +148,32 @@ function cartTotal(
 
 }
 
+function calculateOrderFees(subtotal: number) {
+  if (subtotal < 150) return { deliveryFee: 30, platformFee: 30 };
+  if (subtotal <= 250) return { deliveryFee: 0, platformFee: 20 };
+  if (subtotal <= 500) return { deliveryFee: 0, platformFee: 30 };
+  return { deliveryFee: 0, platformFee: 50 };
+}
 
+function formatCheckoutFees(subtotal: number) {
+  const { deliveryFee } = calculateOrderFees(subtotal);
+
+  if (deliveryFee > 0) {
+    const amountToAdd = 150 - subtotal;
+    return (
+      `Food total: ${money(subtotal)}\n` +
+      `Delivery fee: ${money(deliveryFee)}\n` +
+      `Total to pay: ${money(subtotal + deliveryFee)}\n\n` +
+      `💡 Add ${money(amountToAdd)} more to your food order to reach ₹150 and avoid the ${money(deliveryFee)} delivery fee.`
+    );
+  }
+
+  return (
+    `Food total: ${money(subtotal)}\n` +
+    `Delivery fee: ${money(deliveryFee)}\n` +
+    `Total to pay: ${money(subtotal)}`
+  );
+}
 
 function formatCart(
 
@@ -201,8 +200,6 @@ function formatCart(
     .join("\n");
 
 }
-
-
 
 async function showRestaurants(
 
@@ -242,8 +239,6 @@ async function showRestaurants(
 
       );
 
-
-
   if (
 
     available.length === 0
@@ -258,13 +253,9 @@ async function showRestaurants(
 
     );
 
-
-
     return;
 
   }
-
-
 
   await sendRestaurantList(
 
@@ -275,8 +266,6 @@ async function showRestaurants(
   );
 
 }
-
-
 
 async function showRestaurantMenu(
 
@@ -320,13 +309,9 @@ async function showRestaurantMenu(
 
       .limit(1);
 
-
-
   const restaurant =
 
     restaurantRows[0];
-
-
 
   if (!restaurant) {
 
@@ -338,13 +323,9 @@ async function showRestaurantMenu(
 
     );
 
-
-
     return;
 
   }
-
-
 
   const items =
 
@@ -392,8 +373,6 @@ async function showRestaurantMenu(
 
       );
 
-
-
   if (items.length === 0) {
 
     await sendText(
@@ -404,13 +383,9 @@ async function showRestaurantMenu(
 
     );
 
-
-
     return;
 
   }
-
-
 
   await sendMenu(
 
@@ -424,8 +399,6 @@ async function showRestaurantMenu(
 
 }
 
-
-
 export async function POST(
 
   request: Request
@@ -438,8 +411,6 @@ export async function POST(
 
       await request.json();
 
-
-
     const value =
 
       payload?.entry?.[0]
@@ -448,13 +419,9 @@ export async function POST(
 
         ?.value;
 
-
-
     const message =
 
       value?.messages?.[0];
-
-
 
     if (!message) {
 
@@ -466,13 +433,9 @@ export async function POST(
 
     }
 
-
-
     const phone =
 
       message.from;
-
-
 
     if (!phone) {
 
@@ -484,13 +447,9 @@ export async function POST(
 
     }
 
-
-
     const session =
 
       await getSession(phone);
-
-
 
     const interactiveId =
 
@@ -502,27 +461,19 @@ export async function POST(
 
         ?.list_reply?.id;
 
-
-
     const text =
 
       message?.text?.body?.trim();
 
-
-
     const lowerText =
 
       text?.toLowerCase();
-
-
 
     /*
 
      * GLOBAL RESTART
 
      */
-
-
 
     if (
 
@@ -541,8 +492,6 @@ export async function POST(
         phone
 
       );
-
-
 
       await sendButtons(
 
@@ -564,8 +513,6 @@ export async function POST(
 
       );
 
-
-
       return NextResponse.json({
 
         received: true
@@ -574,15 +521,11 @@ export async function POST(
 
     }
 
-
-
     /*
 
      * ORDER NOW
 
      */
-
-
 
     if (
 
@@ -600,29 +543,19 @@ export async function POST(
 
         "CHOOSING_RESTAURANT";
 
-
-
       session.restaurantId =
 
         null;
 
-
-
       session.cart = [];
-
-
 
       session.customerNote =
 
         null;
 
-
-
       session.deliveryAddress =
 
         null;
-
-
 
       await saveSession(
 
@@ -630,15 +563,11 @@ export async function POST(
 
       );
 
-
-
       await showRestaurants(
 
         phone
 
       );
-
-
 
       return NextResponse.json({
 
@@ -648,15 +577,11 @@ export async function POST(
 
     }
 
-
-
     /*
 
      * RESTAURANT SELECTED
 
      */
-
-
 
     if (
 
@@ -682,8 +607,6 @@ export async function POST(
 
         );
 
-
-
       if (
 
         !Number.isInteger(
@@ -702,8 +625,6 @@ export async function POST(
 
         );
 
-
-
         return NextResponse.json({
 
           received: true
@@ -711,8 +632,6 @@ export async function POST(
         });
 
       }
-
-
 
       const restaurantRows =
 
@@ -748,13 +667,9 @@ export async function POST(
 
           .limit(1);
 
-
-
       const restaurant =
 
         restaurantRows[0];
-
-
 
       if (!restaurant) {
 
@@ -766,8 +681,6 @@ export async function POST(
 
         );
 
-
-
         return NextResponse.json({
 
           received: true
@@ -776,43 +689,29 @@ export async function POST(
 
       }
 
-
-
       session.restaurantId =
 
         restaurantId;
 
-
-
       session.cart = [];
-
-
 
       session.customerNote =
 
         null;
 
-
-
       session.deliveryAddress =
 
         null;
 
-
-
       session.state =
 
         "CHOOSING_ITEM";
-
-
 
       await saveSession(
 
         session
 
       );
-
-
 
       await showRestaurantMenu(
 
@@ -822,8 +721,6 @@ export async function POST(
 
       );
 
-
-
       return NextResponse.json({
 
         received: true
@@ -832,15 +729,11 @@ export async function POST(
 
     }
 
-
-
     /*
 
      * ITEM SELECTED
 
      */
-
-
 
     if (
 
@@ -866,8 +759,6 @@ export async function POST(
 
         );
 
-
-
       if (
 
         !Number.isInteger(
@@ -886,8 +777,6 @@ export async function POST(
 
         );
 
-
-
         return NextResponse.json({
 
           received: true
@@ -895,8 +784,6 @@ export async function POST(
         });
 
       }
-
-
 
       if (
 
@@ -912,15 +799,11 @@ export async function POST(
 
         );
 
-
-
         await showRestaurants(
 
           phone
 
         );
-
-
 
         return NextResponse.json({
 
@@ -929,8 +812,6 @@ export async function POST(
         });
 
       }
-
-
 
       const itemRows =
 
@@ -990,13 +871,9 @@ export async function POST(
 
           .limit(1);
 
-
-
       const item =
 
         itemRows[0];
-
-
 
       if (!item) {
 
@@ -1008,8 +885,6 @@ export async function POST(
 
         );
 
-
-
         await showRestaurantMenu(
 
           phone,
@@ -1018,8 +893,6 @@ export async function POST(
 
         );
 
-
-
         return NextResponse.json({
 
           received: true
@@ -1027,8 +900,6 @@ export async function POST(
         });
 
       }
-
-
 
       const existing =
 
@@ -1042,19 +913,13 @@ export async function POST(
 
         );
 
-
-
       if (existing) {
 
         existing.quantity += 1;
 
-
-
         existing.price =
 
           item.price;
-
-
 
         existing.name =
 
@@ -1068,19 +933,13 @@ export async function POST(
 
             item.id,
 
-
-
           name:
 
             item.name,
 
-
-
           price:
 
             item.price,
-
-
 
           quantity: 1
 
@@ -1088,21 +947,15 @@ export async function POST(
 
       }
 
-
-
       session.state =
 
         "CART";
-
-
 
       await saveSession(
 
         session
 
       );
-
-
 
       const total =
 
@@ -1111,8 +964,6 @@ export async function POST(
           session.cart
 
         );
-
-
 
       await sendButtons(
 
@@ -1158,8 +1009,6 @@ export async function POST(
 
       );
 
-
-
       return NextResponse.json({
 
         received: true
@@ -1168,15 +1017,11 @@ export async function POST(
 
     }
 
-
-
     /*
 
      * ADD MORE
 
      */
-
-
 
     if (
 
@@ -1198,8 +1043,6 @@ export async function POST(
 
         );
 
-
-
         return NextResponse.json({
 
           received: true
@@ -1208,21 +1051,15 @@ export async function POST(
 
       }
 
-
-
       session.state =
 
         "CHOOSING_ITEM";
-
-
 
       await saveSession(
 
         session
 
       );
-
-
 
       await showRestaurantMenu(
 
@@ -1232,8 +1069,6 @@ export async function POST(
 
       );
 
-
-
       return NextResponse.json({
 
         received: true
@@ -1242,15 +1077,11 @@ export async function POST(
 
     }
 
-
-
     /*
 
      * CLEAR CART
 
      */
-
-
 
     if (
 
@@ -1262,33 +1093,23 @@ export async function POST(
 
       session.cart = [];
 
-
-
       session.state =
 
         "CHOOSING_ITEM";
-
-
 
       session.customerNote =
 
         null;
 
-
-
       session.deliveryAddress =
 
         null;
-
-
 
       await saveSession(
 
         session
 
       );
-
-
 
       if (
 
@@ -1314,8 +1135,6 @@ export async function POST(
 
       }
 
-
-
       return NextResponse.json({
 
         received: true
@@ -1324,15 +1143,11 @@ export async function POST(
 
     }
 
-
-
     /*
 
      * CHECKOUT
 
      */
-
-
 
     if (
 
@@ -1358,8 +1173,6 @@ export async function POST(
 
         );
 
-
-
         return NextResponse.json({
 
           received: true
@@ -1367,8 +1180,6 @@ export async function POST(
         });
 
       }
-
-
 
       if (
 
@@ -1384,15 +1195,11 @@ export async function POST(
 
         );
 
-
-
         await showRestaurants(
 
           phone
 
         );
-
-
 
         return NextResponse.json({
 
@@ -1401,8 +1208,6 @@ export async function POST(
         });
 
       }
-
-
 
       const restaurantRows =
 
@@ -1436,13 +1241,9 @@ export async function POST(
 
           .limit(1);
 
-
-
       const restaurant =
 
         restaurantRows[0];
-
-
 
       if (
 
@@ -1460,15 +1261,11 @@ export async function POST(
 
         );
 
-
-
         await resetSession(
 
           phone
 
         );
-
-
 
         return NextResponse.json({
 
@@ -1478,21 +1275,15 @@ export async function POST(
 
       }
 
-
-
       session.state =
 
         "WAITING_FOR_NOTE";
-
-
 
       await saveSession(
 
         session
 
       );
-
-
 
       await sendText(
 
@@ -1514,8 +1305,6 @@ export async function POST(
 
       );
 
-
-
       return NextResponse.json({
 
         received: true
@@ -1524,15 +1313,11 @@ export async function POST(
 
     }
 
-
-
     /*
 
      * CUSTOMER NOTE
 
      */
-
-
 
     if (
 
@@ -1550,21 +1335,15 @@ export async function POST(
 
           : text || null;
 
-
-
       session.state =
 
         "WAITING_FOR_ADDRESS";
-
-
 
       await saveSession(
 
         session
 
       );
-
-
 
       await sendText(
 
@@ -1574,8 +1353,6 @@ export async function POST(
 
       );
 
-
-
       return NextResponse.json({
 
         received: true
@@ -1584,15 +1361,11 @@ export async function POST(
 
     }
 
-
-
     /*
 
      * DELIVERY ADDRESS
 
      */
-
-
 
     if (
 
@@ -1618,8 +1391,6 @@ export async function POST(
 
         );
 
-
-
         return NextResponse.json({
 
           received: true
@@ -1627,8 +1398,6 @@ export async function POST(
         });
 
       }
-
-
 
       if (
 
@@ -1644,15 +1413,11 @@ export async function POST(
 
         );
 
-
-
         await resetSession(
 
           phone
 
         );
-
-
 
         return NextResponse.json({
 
@@ -1661,8 +1426,6 @@ export async function POST(
         });
 
       }
-
-
 
       const restaurantRows =
 
@@ -1696,13 +1459,9 @@ export async function POST(
 
           .limit(1);
 
-
-
       const restaurant =
 
         restaurantRows[0];
-
-
 
       if (
 
@@ -1720,15 +1479,11 @@ export async function POST(
 
         );
 
-
-
         await resetSession(
 
           phone
 
         );
-
-
 
         return NextResponse.json({
 
@@ -1738,27 +1493,19 @@ export async function POST(
 
       }
 
-
-
       session.deliveryAddress =
 
         text;
 
-
-
       session.state =
 
         "WAITING_FOR_CONFIRMATION";
-
-
 
       await saveSession(
 
         session
 
       );
-
-
 
       const subtotal =
 
@@ -1768,22 +1515,15 @@ export async function POST(
 
         );
 
-
-
       await sendButtons(
 
         phone,
 
         `Please confirm your order.\n\n${formatCart(
-
           session.cart
-
-        )}\n\nFood total: ${money(
-
+        )}\n\n${formatCheckoutFees(
           subtotal
-
         )}\nPayment: Cash or UPI directly to the restaurant.\n\nDelivery address:\n${session.deliveryAddress}`,
-
         [
 
           {
@@ -1806,8 +1546,6 @@ export async function POST(
 
       );
 
-
-
       return NextResponse.json({
 
         received: true
@@ -1816,15 +1554,11 @@ export async function POST(
 
     }
 
-
-
     /*
 
      * CONFIRM ORDER
 
      */
-
-
 
     if (
 
@@ -1854,15 +1588,11 @@ export async function POST(
 
         );
 
-
-
         await resetSession(
 
           phone
 
         );
-
-
 
         return NextResponse.json({
 
@@ -1872,15 +1602,11 @@ export async function POST(
 
       }
 
-
-
       /*
 
        * Re-check the restaurant.
 
        */
-
-
 
       const restaurantRows =
 
@@ -1904,13 +1630,9 @@ export async function POST(
 
           .limit(1);
 
-
-
       const restaurant =
 
         restaurantRows[0];
-
-
 
       if (!restaurant) {
 
@@ -1922,15 +1644,11 @@ export async function POST(
 
         );
 
-
-
         await resetSession(
 
           phone
 
         );
-
-
 
         return NextResponse.json({
 
@@ -1939,8 +1657,6 @@ export async function POST(
         });
 
       }
-
-
 
       if (
 
@@ -1956,15 +1672,11 @@ export async function POST(
 
         );
 
-
-
         await resetSession(
 
           phone
 
         );
-
-
 
         return NextResponse.json({
 
@@ -1973,8 +1685,6 @@ export async function POST(
         });
 
       }
-
-
 
       /*
 
@@ -1994,8 +1704,6 @@ export async function POST(
 
        */
 
-
-
       const cartItemIds =
 
         session.cart.map(
@@ -2005,8 +1713,6 @@ export async function POST(
             item.menuItemId
 
         );
-
-
 
       const currentItems =
 
@@ -2056,8 +1762,6 @@ export async function POST(
 
           );
 
-
-
       const currentItemMap =
 
         new Map(
@@ -2076,13 +1780,9 @@ export async function POST(
 
         );
 
-
-
       const unavailableItems: string[] =
 
         [];
-
-
 
       for (
 
@@ -2099,8 +1799,6 @@ export async function POST(
             cartItem.menuItemId
 
           );
-
-
 
         if (
 
@@ -2119,8 +1817,6 @@ export async function POST(
         }
 
       }
-
-
 
       if (
 
@@ -2152,15 +1848,11 @@ export async function POST(
 
         );
 
-
-
         await resetSession(
 
           phone
 
         );
-
-
 
         return NextResponse.json({
 
@@ -2170,8 +1862,6 @@ export async function POST(
 
       }
 
-
-
       /*
 
        * Rebuild the cart using
@@ -2179,8 +1869,6 @@ export async function POST(
        * current database prices.
 
        */
-
-
 
       const verifiedCart: CartItem[] =
 
@@ -2196,27 +1884,19 @@ export async function POST(
 
               )!;
 
-
-
             return {
 
               menuItemId:
 
                 currentItem.id,
 
-
-
               name:
 
                 currentItem.name,
 
-
-
               price:
 
                 currentItem.price,
-
-
 
               quantity:
 
@@ -2228,8 +1908,6 @@ export async function POST(
 
         );
 
-
-
       const subtotal =
 
         cartTotal(
@@ -2237,8 +1915,6 @@ export async function POST(
           verifiedCart
 
         );
-
-
 
       /*
 
@@ -2256,36 +1932,51 @@ export async function POST(
 
        */
 
+      const {
+        deliveryFee,
+        platformFee
+      } = calculateOrderFees(subtotal);
 
-
-      const platformFee =
-
-        30;
-
-
+      const total =
+        subtotal + deliveryFee;
 
       /*
+
        * Create the order and
+
        * its items together.
+
        *
+
        * The counter is scoped to:
+
        *
+
        * restaurant + India calendar day.
+
        *
+
        * This makes order numbers:
+
        *
+
        * #RRRDDMMYYNNN
+
        *
+
        * and resets the sequence for
+
        * each restaurant every day.
+
        */
 
       const {
+
         dateKey,
+
         dateCode
+
       } = getIndiaDateParts();
-
-
 
       const createdOrder =
 
@@ -2298,18 +1989,23 @@ export async function POST(
               await tx
 
                 .insert(
+
                   restaurantDailyOrderCounters
+
                 )
 
                 .values({
 
                   restaurantId:
+
                     restaurant.id,
 
                   orderDate:
+
                     dateKey,
 
                   orderCount:
+
                     1
 
                 })
@@ -2327,6 +2023,7 @@ export async function POST(
                   set: {
 
                     orderCount:
+
                       sql`${restaurantDailyOrderCounters.orderCount} + 1`
 
                   }
@@ -2336,16 +2033,14 @@ export async function POST(
                 .returning({
 
                   orderCount:
+
                     restaurantDailyOrderCounters.orderCount
 
                 });
 
-
-
             const counter =
+
               counterRows[0];
-
-
 
             if (!counter) {
 
@@ -2356,8 +2051,6 @@ export async function POST(
               );
 
             }
-
-
 
             const orderNumber =
 
@@ -2370,8 +2063,6 @@ export async function POST(
                 counter.orderCount
 
               );
-
-
 
             const createdOrders =
 
@@ -2387,45 +2078,29 @@ export async function POST(
 
                     restaurant.id,
 
-
-
                   customerPhone:
 
                     phone,
-
-
 
                   deliveryAddress:
 
                     session.deliveryAddress!,
 
-
-
                   customerNote:
 
                     session.customerNote,
 
-
-
                   subtotal,
 
-
+                  deliveryFee,
 
                   platformFee,
 
-
-
-                  total:
-
-                    subtotal,
-
-
+                  total,
 
                   paymentMethod:
 
                     "COD_OR_UPI",
-
-
 
                   /*
 
@@ -2449,13 +2124,9 @@ export async function POST(
 
                 .returning();
 
-
-
             const order =
 
               createdOrders[0];
-
-
 
             if (!order) {
 
@@ -2466,8 +2137,6 @@ export async function POST(
               );
 
             }
-
-
 
             for (
 
@@ -2487,37 +2156,25 @@ export async function POST(
 
                     order.id,
 
-
-
                   menuItemId:
 
                     item.menuItemId,
-
-
 
                   itemName:
 
                     item.name,
 
-
-
                   quantity:
 
                     item.quantity,
-
-
 
                   unitPrice:
 
                     item.price,
 
-
-
                   note:
 
                     null,
-
-
 
                   total:
 
@@ -2529,28 +2186,21 @@ export async function POST(
 
             }
 
-
-
             return order;
 
           }
 
         );
 
-
-
       const orderNumber =
+
         createdOrder.orderNumber;
-
-
 
       const restaurantPhone =
 
         restaurant.whatsapp ||
 
         restaurant.phone;
-
-
 
       const restaurantMessage =
 
@@ -2564,14 +2214,11 @@ export async function POST(
 
         )}\n\n` +
 
-        `Total to collect: ${money(
-
-          subtotal
-
-        )}\n` +
-
+        `Food subtotal: ${money(subtotal)}\n` +
+        `Delivery fee: ${money(deliveryFee)}\n` +
+        `Customer total to collect: ${money(total)}\n` +
+        `OffMenu fee: ${money(platformFee)}\n` +
         `Payment: Cash / UPI\n\n` +
-
         `Customer WhatsApp: ${phone}\n\n` +
 
         `Delivery address:\n${session.deliveryAddress}` +
@@ -2581,8 +2228,6 @@ export async function POST(
           ? `\n\nCustomer note:\n${session.customerNote}`
 
           : "");
-
-
 
       /*
 
@@ -2601,8 +2246,6 @@ export async function POST(
        * restaurant panel.
 
        */
-
-
 
       try {
 
@@ -2630,8 +2273,6 @@ export async function POST(
 
       }
 
-
-
       /*
 
        * IMPORTANT:
@@ -2650,8 +2291,6 @@ export async function POST(
 
        */
 
-
-
       await sendText(
 
         phone,
@@ -2668,21 +2307,15 @@ export async function POST(
 
           )}\n\n` +
 
-          `Total: ${money(
-
-            subtotal
-
-          )}\n` +
-
+          `Food total: ${money(subtotal)}\n` +
+          `Delivery fee: ${money(deliveryFee)}\n` +
+          `Total to pay: ${money(total)}\n` +
           `Payment: Cash or UPI directly to the restaurant.\n\n` +
-
           `Your order has been sent to the restaurant.\n` +
 
           `You'll receive a confirmation once the restaurant accepts it.`
 
       );
-
-
 
       await sendButtons(
 
@@ -2704,15 +2337,11 @@ export async function POST(
 
       );
 
-
-
       await resetSession(
 
         phone
 
       );
-
-
 
       return NextResponse.json({
 
@@ -2726,15 +2355,11 @@ export async function POST(
 
     }
 
-
-
     /*
 
      * CANCEL ORDER
 
      */
-
-
 
     if (
 
@@ -2750,8 +2375,6 @@ export async function POST(
 
       );
 
-
-
       await sendText(
 
         phone,
@@ -2759,8 +2382,6 @@ export async function POST(
         "Order cancelled.\n\nWhenever you're hungry, just send HI."
 
       );
-
-
 
       return NextResponse.json({
 
@@ -2770,15 +2391,11 @@ export async function POST(
 
     }
 
-
-
     /*
 
      * NEW ORDER
 
      */
-
-
 
     if (
 
@@ -2794,15 +2411,11 @@ export async function POST(
 
       );
 
-
-
       await showRestaurants(
 
         phone
 
       );
-
-
 
       return NextResponse.json({
 
@@ -2812,15 +2425,11 @@ export async function POST(
 
     }
 
-
-
     /*
 
      * FALLBACK
 
      */
-
-
 
     await sendButtons(
 
@@ -2842,8 +2451,6 @@ export async function POST(
 
     );
 
-
-
     return NextResponse.json({
 
       received: true
@@ -2859,8 +2466,6 @@ export async function POST(
       error
 
     );
-
-
 
     return NextResponse.json(
 
