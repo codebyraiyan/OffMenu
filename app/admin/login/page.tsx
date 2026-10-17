@@ -8,6 +8,7 @@ export default function AdminLogin() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -18,24 +19,19 @@ export default function AdminLogin() {
     setLoading(true);
 
     try {
-      const response = await fetch(
-        "/api/admin/login",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
-          body: JSON.stringify({
-            email,
-            password
-          })
-        }
-      );
+      const response = await fetch("/api/admin/login", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          email,
+          password,
+        }),
+      });
 
       if (!response.ok) {
-        setError(
-          "Invalid email or password."
-        );
+        setError("Invalid email or password.");
         setLoading(false);
         return;
       }
@@ -43,10 +39,7 @@ export default function AdminLogin() {
       router.push("/admin");
       router.refresh();
     } catch {
-      setError(
-        "Something went wrong. Please try again."
-      );
-
+      setError("Something went wrong. Please try again.");
       setLoading(false);
     }
   }
@@ -74,26 +67,46 @@ export default function AdminLogin() {
             type="email"
             placeholder="Email"
             value={email}
-            onChange={(event) =>
-              setEmail(event.target.value)
-            }
+            onChange={(event) => setEmail(event.target.value)}
+            autoComplete="username"
             className="w-full rounded-xl border border-neutral-300 px-4 py-3 outline-none focus:border-black"
             required
           />
 
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(event) =>
-              setPassword(event.target.value)
-            }
-            className="w-full rounded-xl border border-neutral-300 px-4 py-3 outline-none focus:border-black"
-            required
-          />
+          <div>
+            <label
+              htmlFor="admin-password"
+              className="sr-only"
+            >
+              Password
+            </label>
+
+            <div className="relative">
+              <input
+                id="admin-password"
+                type={showPassword ? "text" : "password"}
+                placeholder="Password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                autoComplete="current-password"
+                className="w-full rounded-xl border border-neutral-300 px-4 py-3 pr-20 outline-none focus:border-black"
+                required
+              />
+
+              <button
+                type="button"
+                onClick={() => setShowPassword((visible) => !visible)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+                className="absolute inset-y-0 right-3 text-sm font-medium text-neutral-600 hover:text-black"
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
+          </div>
 
           {error && (
-            <p className="text-sm text-red-600">
+            <p role="alert" className="text-sm text-red-600">
               {error}
             </p>
           )}
@@ -103,9 +116,7 @@ export default function AdminLogin() {
             disabled={loading}
             className="w-full rounded-xl bg-black px-4 py-3 text-sm font-medium text-white disabled:opacity-50"
           >
-            {loading
-              ? "Signing in..."
-              : "Sign in"}
+            {loading ? "Signing in..." : "Sign in"}
           </button>
         </div>
       </form>
