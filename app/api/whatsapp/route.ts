@@ -201,6 +201,60 @@ function formatCart(
 
 }
 
+async function handleUnavailableRestaurant(
+
+  phone: string,
+
+  restaurant?: {
+
+    name: string;
+
+    isActive: boolean;
+
+    isOpen: boolean;
+
+  } | null
+
+) {
+
+  let message: string;
+
+  if (!restaurant) {
+
+    message = "That restaurant is no longer available on OffMenu.";
+
+  } else if (!restaurant.isActive) {
+
+    message = `${restaurant.name} is no longer available on OffMenu.`;
+
+  } else {
+
+    message = `${restaurant.name} is currently closed and isn't accepting orders.`;
+
+  }
+
+  await resetSession(
+
+    phone
+
+  );
+
+  await sendText(
+
+    phone,
+
+    `${message}\n\nI've cleared your current order. Here are the restaurants available right now.`
+
+  );
+
+  await showRestaurants(
+
+    phone
+
+  );
+
+}
+
 async function showRestaurants(
 
   phone: string
@@ -223,11 +277,23 @@ async function showRestaurants(
 
       .where(
 
-        eq(
+        and(
 
-          restaurants.isOpen,
+          eq(
 
-          true
+            restaurants.isActive,
+
+            true
+
+          ),
+
+          eq(
+
+            restaurants.isOpen,
+
+            true
+
+          )
 
         )
 
@@ -285,23 +351,11 @@ async function showRestaurantMenu(
 
       .where(
 
-        and(
+        eq(
 
-          eq(
+          restaurants.id,
 
-            restaurants.id,
-
-            restaurantId
-
-          ),
-
-          eq(
-
-            restaurants.isOpen,
-
-            true
-
-          )
+          restaurantId
 
         )
 
@@ -313,13 +367,21 @@ async function showRestaurantMenu(
 
     restaurantRows[0];
 
-  if (!restaurant) {
+  if (
 
-    await sendText(
+    !restaurant ||
+
+    !restaurant.isActive ||
+
+    !restaurant.isOpen
+
+  ) {
+
+    await handleUnavailableRestaurant(
 
       phone,
 
-      "That restaurant is currently unavailable."
+      restaurant
 
     );
 
@@ -643,23 +705,11 @@ export async function POST(
 
           .where(
 
-            and(
+            eq(
 
-              eq(
+              restaurants.id,
 
-                restaurants.id,
-
-                restaurantId
-
-              ),
-
-              eq(
-
-                restaurants.isOpen,
-
-                true
-
-              )
+              restaurantId
 
             )
 
@@ -671,13 +721,21 @@ export async function POST(
 
         restaurantRows[0];
 
-      if (!restaurant) {
+      if (
 
-        await sendText(
+        !restaurant ||
+
+        !restaurant.isActive ||
+
+        !restaurant.isOpen
+
+      ) {
+
+        await handleUnavailableRestaurant(
 
           phone,
 
-          "That restaurant is currently unavailable."
+          restaurant
 
         );
 
@@ -802,6 +860,66 @@ export async function POST(
         await showRestaurants(
 
           phone
+
+        );
+
+        return NextResponse.json({
+
+          received: true
+
+        });
+
+      }
+
+      const selectedRestaurantRows =
+
+        await db
+
+          .select({
+
+            name: restaurants.name,
+
+            isActive: restaurants.isActive,
+
+            isOpen: restaurants.isOpen
+
+          })
+
+          .from(restaurants)
+
+          .where(
+
+            eq(
+
+              restaurants.id,
+
+              session.restaurantId
+
+            )
+
+          )
+
+          .limit(1);
+
+      const selectedRestaurant =
+
+        selectedRestaurantRows[0];
+
+      if (
+
+        !selectedRestaurant ||
+
+        !selectedRestaurant.isActive ||
+
+        !selectedRestaurant.isOpen
+
+      ) {
+
+        await handleUnavailableRestaurant(
+
+          phone,
+
+          selectedRestaurant
 
         );
 
@@ -1219,9 +1337,9 @@ export async function POST(
 
             name: restaurants.name,
 
-            isOpen:
+            isActive: restaurants.isActive,
 
-              restaurants.isOpen
+            isOpen: restaurants.isOpen
 
           })
 
@@ -1249,21 +1367,17 @@ export async function POST(
 
         !restaurant ||
 
+        !restaurant.isActive ||
+
         !restaurant.isOpen
 
       ) {
 
-        await sendText(
+        await handleUnavailableRestaurant(
 
           phone,
 
-          "Sorry, that restaurant is currently closed."
-
-        );
-
-        await resetSession(
-
-          phone
+          restaurant
 
         );
 
@@ -1326,6 +1440,96 @@ export async function POST(
       "WAITING_FOR_NOTE"
 
     ) {
+
+      if (!session.restaurantId) {
+
+        await resetSession(
+
+          phone
+
+        );
+
+        await sendText(
+
+          phone,
+
+          "Your restaurant selection has expired. Let's choose an available restaurant."
+
+        );
+
+        await showRestaurants(
+
+          phone
+
+        );
+
+        return NextResponse.json({
+
+          received: true
+
+        });
+
+      }
+
+      const noteRestaurantRows =
+
+        await db
+
+          .select({
+
+            name: restaurants.name,
+
+            isActive: restaurants.isActive,
+
+            isOpen: restaurants.isOpen
+
+          })
+
+          .from(restaurants)
+
+          .where(
+
+            eq(
+
+              restaurants.id,
+
+              session.restaurantId
+
+            )
+
+          )
+
+          .limit(1);
+
+      const noteRestaurant =
+
+        noteRestaurantRows[0];
+
+      if (
+
+        !noteRestaurant ||
+
+        !noteRestaurant.isActive ||
+
+        !noteRestaurant.isOpen
+
+      ) {
+
+        await handleUnavailableRestaurant(
+
+          phone,
+
+          noteRestaurant
+
+        );
+
+        return NextResponse.json({
+
+          received: true
+
+        });
+
+      }
 
       session.customerNote =
 
@@ -1437,9 +1641,9 @@ export async function POST(
 
             name: restaurants.name,
 
-            isOpen:
+            isActive: restaurants.isActive,
 
-              restaurants.isOpen
+            isOpen: restaurants.isOpen
 
           })
 
@@ -1467,21 +1671,17 @@ export async function POST(
 
         !restaurant ||
 
+        !restaurant.isActive ||
+
         !restaurant.isOpen
 
       ) {
 
-        await sendText(
+        await handleUnavailableRestaurant(
 
           phone,
 
-          "Sorry, that restaurant is currently closed."
-
-        );
-
-        await resetSession(
-
-          phone
+          restaurant
 
         );
 
@@ -1680,47 +1880,21 @@ export async function POST(
 
         restaurantRows[0];
 
-      if (!restaurant) {
-
-        await sendText(
-
-          phone,
-
-          "That restaurant is no longer available."
-
-        );
-
-        await resetSession(
-
-          phone
-
-        );
-
-        return NextResponse.json({
-
-          received: true
-
-        });
-
-      }
-
       if (
+
+        !restaurant ||
+
+        !restaurant.isActive ||
 
         !restaurant.isOpen
 
       ) {
 
-        await sendText(
+        await handleUnavailableRestaurant(
 
           phone,
 
-          `Sorry, ${restaurant.name} is currently closed. Your order was not placed.`
-
-        );
-
-        await resetSession(
-
-          phone
+          restaurant
 
         );
 
@@ -2024,11 +2198,105 @@ export async function POST(
 
       } = getIndiaDateParts();
 
-      const createdOrder =
+      const transactionResult =
 
         await db.transaction(
 
           async (tx) => {
+
+            // Conditional no-op UPDATE acquires the write transaction before
+            // order creation and serializes this check against status changes.
+            const statusGuardRows =
+
+              await tx
+
+                .update(restaurants)
+
+                .set({
+
+                  isActive: sql`is_active`
+
+                })
+
+                .where(
+
+                  and(
+
+                    eq(
+
+                      restaurants.id,
+
+                      restaurant.id
+
+                    ),
+
+                    eq(
+
+                      restaurants.isActive,
+
+                      true
+
+                    ),
+
+                    eq(
+
+                      restaurants.isOpen,
+
+                      true
+
+                    )
+
+                  )
+
+                )
+
+                .returning({
+
+                  id: restaurants.id
+
+                });
+
+            if (statusGuardRows.length === 0) {
+
+              const currentRestaurantRows =
+
+                await tx
+
+                  .select({
+
+                    name: restaurants.name,
+
+                    isActive: restaurants.isActive,
+
+                    isOpen: restaurants.isOpen
+
+                  })
+
+                  .from(restaurants)
+
+                  .where(
+
+                    eq(
+
+                      restaurants.id,
+
+                      restaurant.id
+
+                    )
+
+                  )
+
+                  .limit(1);
+
+              return {
+
+                order: null,
+
+                unavailableRestaurant: currentRestaurantRows[0] ?? null
+
+              };
+
+            }
 
             const counterRows =
 
@@ -2232,11 +2500,37 @@ export async function POST(
 
             }
 
-            return order;
+            return {
+
+              order,
+
+              unavailableRestaurant: null
+
+            };
 
           }
 
         );
+
+      if (!transactionResult.order) {
+
+        await handleUnavailableRestaurant(
+
+          phone,
+
+          transactionResult.unavailableRestaurant
+
+        );
+
+        return NextResponse.json({
+
+          received: true
+
+        });
+
+      }
+
+      const createdOrder = transactionResult.order;
 
       const orderNumber =
 

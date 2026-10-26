@@ -44,6 +44,13 @@ export const restaurants = sqliteTable(
       .notNull()
       .default(true),
 
+    // Controls marketplace visibility independently of isOpen.
+    isActive: integer("is_active", {
+      mode: "boolean"
+    })
+      .notNull()
+      .default(true),
+
     createdAt: integer(
       "created_at",
       {

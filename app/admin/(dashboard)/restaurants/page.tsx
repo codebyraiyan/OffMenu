@@ -1,8 +1,10 @@
+
 import Link from "next/link";
 import { desc } from "drizzle-orm";
 
 import { db } from "@/db";
 import { restaurants } from "@/db/schema";
+import RestaurantList from "@/components/RestaurantList";
 
 export default async function RestaurantsPage() {
   const rows = await db
@@ -23,7 +25,7 @@ export default async function RestaurantsPage() {
           </h1>
 
           <p className="mt-2 text-sm text-neutral-500">
-            Manage restaurants and their menus.
+            Manage restaurants, their menus, and marketplace availability.
           </p>
         </div>
 
@@ -53,55 +55,17 @@ export default async function RestaurantsPage() {
           </Link>
         </div>
       ) : (
-        <div className="grid gap-4">
-          {rows.map((restaurant) => (
-            <Link
-              key={restaurant.id}
-              href={`/admin/restaurants/${restaurant.id}`}
-              className="group block rounded-2xl border border-neutral-200 bg-white p-6 transition hover:border-neutral-400"
-            >
-              <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <h2 className="text-xl font-semibold tracking-tight">
-                      {restaurant.name}
-                    </h2>
-
-                    <span
-                      className={
-                        restaurant.isOpen
-                          ? "rounded-full bg-green-100 px-3 py-1 text-xs font-medium text-green-700"
-                          : "rounded-full bg-neutral-100 px-3 py-1 text-xs font-medium text-neutral-600"
-                      }
-                    >
-                      {restaurant.isOpen ? "Open" : "Closed"}
-                    </span>
-                  </div>
-
-                  {restaurant.description && (
-                    <p className="mt-2 max-w-2xl text-sm text-neutral-500">
-                      {restaurant.description}
-                    </p>
-                  )}
-
-                  <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm text-neutral-500">
-                    <span>
-                      {restaurant.area}
-                    </span>
-
-                    <span>
-                      {restaurant.phone}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="shrink-0 text-sm font-medium text-neutral-900">
-                  Manage →
-                </div>
-              </div>
-            </Link>
-          ))}
-        </div>
+        <RestaurantList
+          restaurants={rows.map((restaurant) => ({
+            id: restaurant.id,
+            name: restaurant.name,
+            description: restaurant.description,
+            phone: restaurant.phone,
+            area: restaurant.area,
+            isOpen: restaurant.isOpen,
+            isActive: restaurant.isActive,
+          }))}
+        />
       )}
     </div>
   );

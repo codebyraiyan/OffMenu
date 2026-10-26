@@ -1,104 +1,176 @@
-import {
-  NextResponse
-} from "next/server";
 
-import {
-  eq
-} from "drizzle-orm";
+import { NextResponse } from "next/server";
+import { eq } from "drizzle-orm";
 
 import { db } from "@/db";
-
 import {
+  menuItems,
   restaurants,
-  menuItems
 } from "@/db/schema";
+import { isAdmin } from "@/lib/auth";
 
-import {
-  isAdmin
-} from "@/lib/auth";
+type RouteContext = {
+  params: Promise<{
+    id: string;
+  }>;
+};
 
-export async function GET(
-  request: Request,
-  context: {
-    params: Promise<{
-      id: string;
-    }>;
+function parseRestaurantId(id: string): number | null {
+  const restaurantId = Number(id);
+
+  if (!Number.isSafeInteger(restaurantId) || restaurantId <= 0) {
+    return null;
   }
-) {
+
+  return restaurantId;
+}
+
+export async function GET(_request: Request, context: RouteContext) {
   if (!(await isAdmin())) {
     return NextResponse.json(
-      {
-        error: "Unauthorized"
-      },
-      {
-        status: 401
-      }
+      { error: "Unauthorized" },
+      { status: 401 }
     );
   }
 
-  const {
-    id
-  } = await context.params;
+  const { id } = await context.params;
+  const restaurantId = parseRestaurantId(id);
 
-  const restaurantId =
-    Number(id);
-
-  if (
-    !Number.isInteger(
-      restaurantId
-    )
-  ) {
+  if (restaurantId === null) {
     return NextResponse.json(
-      {
-        error:
-          "Invalid restaurant ID."
-      },
-      {
-        status: 400
-      }
+      { error: "Invalid restaurant ID." },
+      { status: 400 }
     );
   }
 
-  const restaurantRows =
-    await db
+  try {
+    const restaurantRows = await db
       .select()
       .from(restaurants)
-      .where(
-        eq(
-          restaurants.id,
-          restaurantId
-        )
-      )
+      .where(eq(restaurants.id, restaurantId))
       .limit(1);
 
-  const restaurant =
-    restaurantRows[0];
+    const restaurant = restaurantRows[0];
 
-  if (!restaurant) {
+    if (!restaurant) {
+      return NextResponse.json(
+        { error: "Restaurant not found." },
+        { status: 404 }
+      );
+    }
+
+    const menu = await db
+      .select()
+      .from(menuItems)
+      .where(eq(menuItems.restaurantId, restaurantId));
+
+    return NextResponse.json({ restaurant, menu });
+  } catch (error) {
+    console.error("Failed to fetch restaurant:", error);
+
     return NextResponse.json(
-      {
-        error:
-          "Restaurant not found."
-      },
-      {
-        status: 404
-      }
+      { error: "Failed to fetch restaurant." },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(request: Request, context: RouteContext) {
+  if (!(await isAdmin())) {
+    return NextResponse.json(
+      { error: "Unauthorized" },
+      { status: 401 }
     );
   }
 
-  const menu =
-    await db
-      .select()
-      .from(menuItems)
-      .where(
-        eq(
-          menuItems.restaurantId,
-          restaurantId
-        )
-      );
+  const { id } = await context.params;
+  const restaurantId = parseRestaurantId(id);
 
-  return NextResponse.json({
-    restaurant,
-    menu
-  });
+  if (restaurantId === null) {
+    return NextResponse.json(
+      { error: "Invalid restaurant ID." },
+      { status: 400 }
+    );
+  }
+
+  let body: unknown;
+
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json(
+      { error: "Request body must be valid JSON." },
+      { status: 400 }
+    );
+  }
+
+  if (
+    typeof body !== "object" ||
+    body === null ||
+    !("isActive" in body) ||
+    typeof body.isActive !== "boolean"
+  ) {
+    return NextResponse.json(
+      { error: "isActive must be a boolean." },
+      { status: 400 }
+    );
+  }
+
+  try {
+    const [existingRestaurant] = await db
+      .select({
+        id: restaurants.id,
+        name: restaurants.name,
+      })
+      .from(restaurants)
+      .where(eq(restaurants.id, restaurantId))
+      .limit(1);
+
+    if (!existingRestaurant) {
+      return NextResponse.json(
+        { error: "Restaurant not found." },
+        { status: 404 }
+      );
+    }
+
+    const [updatedRestaurant] = await db
+      .update(restaurants)
+      .set({
+        isActive: body.isActive,
+      })
+      .where(eq(restaurants.id, restaurantId))
+      .returning();
+
+    if (!updatedRestaurant) {
+      return NextResponse.json(
+        { error: "Failed to update restaurant status." },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: body.isActive
+        ? "Restaurant activated successfully."
+        : "Restaurant deactivated successfully.",
+      restaurant: updatedRestaurant,
+    });
+  } catch (error) {
+    console.error("Restaurant status update failed:", error);
+
+    return NextResponse.json(
+      { error: "Failed to update restaurant status." },
+      { status: 500 }
+    );
+  }
+}
+
+export async function DELETE() {
+  return NextResponse.json(
+    {
+      error:
+        "Permanent restaurant deletion is disabled. Deactivate the restaurant instead to preserve its history.",
+    },
+    { status: 409 }
+  );
 }
