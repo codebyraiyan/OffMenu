@@ -15,6 +15,20 @@
       "when": 1792863788868,
       "tag": "0001_add_restaurant_is_active",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1793088000000,
+      "tag": "0002_add_commission_accounting",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1793159906961,
+      "tag": "0003_whatsapp_reliability",
+      "breakpoints": true
     }
   ]
 }

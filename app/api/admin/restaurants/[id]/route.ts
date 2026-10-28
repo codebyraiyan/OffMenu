@@ -45,7 +45,19 @@ export async function GET(_request: Request, context: RouteContext) {
 
   try {
     const restaurantRows = await db
-      .select()
+      .select({
+        id: restaurants.id,
+        name: restaurants.name,
+        description: restaurants.description,
+        phone: restaurants.phone,
+        whatsapp: restaurants.whatsapp,
+        address: restaurants.address,
+        area: restaurants.area,
+        imageUrl: restaurants.imageUrl,
+        isOpen: restaurants.isOpen,
+        isActive: restaurants.isActive,
+        createdAt: restaurants.createdAt,
+      })
       .from(restaurants)
       .where(eq(restaurants.id, restaurantId))
       .limit(1);
@@ -104,16 +116,51 @@ export async function PATCH(request: Request, context: RouteContext) {
     );
   }
 
-  if (
-    typeof body !== "object" ||
-    body === null ||
-    !("isActive" in body) ||
-    typeof body.isActive !== "boolean"
-  ) {
+  if (typeof body !== "object" || body === null) {
     return NextResponse.json(
-      { error: "isActive must be a boolean." },
+      { error: "Invalid restaurant updates." },
       { status: 400 }
     );
+  }
+
+  const input = body as Record<string, unknown>;
+  const updates: {
+    isActive?: boolean;
+    name?: string;
+    description?: string | null;
+    phone?: string;
+    whatsapp?: string | null;
+    address?: string | null;
+    area?: string;
+    imageUrl?: string | null;
+  } = {};
+
+  if ("isActive" in input) {
+    if (typeof input.isActive !== "boolean") {
+      return NextResponse.json({ error: "isActive must be a boolean." }, { status: 400 });
+    }
+    updates.isActive = input.isActive;
+  }
+
+  for (const field of ["name", "phone", "area"] as const) {
+    if (field in input) {
+      const value = String(input[field] ?? "").trim();
+      if (!value) {
+        return NextResponse.json({ error: `${field} cannot be empty.` }, { status: 400 });
+      }
+      updates[field] = value;
+    }
+  }
+
+  for (const field of ["description", "whatsapp", "address", "imageUrl"] as const) {
+    if (field in input) {
+      const value = String(input[field] ?? "").trim();
+      updates[field] = value || null;
+    }
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ error: "No supported restaurant updates provided." }, { status: 400 });
   }
 
   try {
@@ -136,10 +183,22 @@ export async function PATCH(request: Request, context: RouteContext) {
     const [updatedRestaurant] = await db
       .update(restaurants)
       .set({
-        isActive: body.isActive,
+        ...updates,
       })
       .where(eq(restaurants.id, restaurantId))
-      .returning();
+      .returning({
+        id: restaurants.id,
+        name: restaurants.name,
+        description: restaurants.description,
+        phone: restaurants.phone,
+        whatsapp: restaurants.whatsapp,
+        address: restaurants.address,
+        area: restaurants.area,
+        imageUrl: restaurants.imageUrl,
+        isOpen: restaurants.isOpen,
+        isActive: restaurants.isActive,
+        createdAt: restaurants.createdAt,
+      });
 
     if (!updatedRestaurant) {
       return NextResponse.json(
@@ -150,9 +209,11 @@ export async function PATCH(request: Request, context: RouteContext) {
 
     return NextResponse.json({
       success: true,
-      message: body.isActive
-        ? "Restaurant activated successfully."
-        : "Restaurant deactivated successfully.",
+      message: updates.isActive === undefined
+        ? "Restaurant details updated successfully."
+        : updates.isActive
+          ? "Restaurant activated successfully."
+          : "Restaurant deactivated successfully.",
       restaurant: updatedRestaurant,
     });
   } catch (error) {

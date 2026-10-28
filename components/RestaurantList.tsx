@@ -22,11 +22,25 @@ export default function RestaurantList({
   restaurants: initialRestaurants,
 }: RestaurantListProps) {
   const [restaurants, setRestaurants] = useState(initialRestaurants);
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(0);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
   const [feedback, setFeedback] = useState<{
     type: "success" | "error";
     message: string;
   } | null>(null);
+
+  const normalizedQuery = query.trim().toLowerCase();
+  const filteredRestaurants = restaurants.filter((restaurant) =>
+    !normalizedQuery ||
+    restaurant.name.toLowerCase().includes(normalizedQuery) ||
+    (restaurant.area ?? "").toLowerCase().includes(normalizedQuery) ||
+    (restaurant.phone ?? "").toLowerCase().includes(normalizedQuery) ||
+    String(restaurant.id).includes(normalizedQuery),
+  );
+  const pageSize = 10;
+  const pageCount = Math.max(1, Math.ceil(filteredRestaurants.length / pageSize));
+  const visibleRestaurants = filteredRestaurants.slice(page * pageSize, (page + 1) * pageSize);
 
   async function handleToggleActive(restaurant: Restaurant) {
     const nextIsActive = !restaurant.isActive;
@@ -149,8 +163,19 @@ export default function RestaurantList({
         </p>
       )}
 
+      <input
+        value={query}
+        onChange={(event) => { setQuery(event.target.value); setPage(0); }}
+        placeholder="Search restaurant name, area, phone, or ID"
+        aria-label="Search restaurants"
+        className="w-full rounded-xl border border-neutral-300 bg-white px-4 py-3 text-sm"
+      />
+
+      {visibleRestaurants.length === 0 ? (
+        <p className="rounded-xl border border-neutral-200 bg-white p-6 text-sm text-neutral-500">No restaurants match this search.</p>
+      ) : (
       <div className="grid gap-4">
-        {restaurants.map((restaurant) => (
+        {visibleRestaurants.map((restaurant) => (
           <div
             key={restaurant.id}
             className="flex flex-col gap-4 rounded-xl border border-neutral-200 bg-white p-5 sm:flex-row sm:items-center sm:justify-between"
@@ -212,6 +237,15 @@ export default function RestaurantList({
             </div>
           </div>
         ))}
+      </div>
+      )}
+
+      <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+        <span className="text-neutral-500">{filteredRestaurants.length} restaurants · page {page + 1} of {pageCount}</span>
+        <div className="flex gap-2">
+          <button type="button" disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))} className="rounded-lg border px-3 py-2 disabled:opacity-40">Previous</button>
+          <button type="button" disabled={page + 1 >= pageCount} onClick={() => setPage((current) => Math.min(pageCount - 1, current + 1))} className="rounded-lg border px-3 py-2 disabled:opacity-40">Next</button>
+        </div>
       </div>
     </div>
   );

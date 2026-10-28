@@ -8,7 +8,19 @@ import { restaurants, menuItems } from "@/db/schema";
 export async function GET() {
   try {
     const restaurantRows = await db
-      .select()
+      .select({
+        id: restaurants.id,
+        name: restaurants.name,
+        description: restaurants.description,
+        phone: restaurants.phone,
+        whatsapp: restaurants.whatsapp,
+        address: restaurants.address,
+        area: restaurants.area,
+        imageUrl: restaurants.imageUrl,
+        isOpen: restaurants.isOpen,
+        isActive: restaurants.isActive,
+        createdAt: restaurants.createdAt,
+      })
       .from(restaurants)
       .where(
         and(

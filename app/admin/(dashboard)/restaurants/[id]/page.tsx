@@ -41,6 +41,9 @@ export default function RestaurantPage() {
   const [items, setItems] =
     useState<MenuItem[]>([]);
 
+  const [menuSearch, setMenuSearch] = useState("");
+  const [menuPage, setMenuPage] = useState(0);
+
   const [loading, setLoading] =
     useState(true);
 
@@ -58,6 +61,17 @@ export default function RestaurantPage() {
 
   const [addingItem, setAddingItem] =
     useState(false);
+
+  const [savingDetails, setSavingDetails] = useState(false);
+
+  const filteredItems = items.filter((item) => {
+    const query = menuSearch.trim().toLowerCase();
+    return !query || item.name.toLowerCase().includes(query) ||
+      (item.description ?? "").toLowerCase().includes(query);
+  });
+  const menuPageSize = 10;
+  const menuPageCount = Math.max(1, Math.ceil(filteredItems.length / menuPageSize));
+  const visibleItems = filteredItems.slice(menuPage * menuPageSize, (menuPage + 1) * menuPageSize);
 
   async function loadRestaurant() {
     setLoading(true);
@@ -97,6 +111,35 @@ export default function RestaurantPage() {
   useEffect(() => {
     loadRestaurant();
   }, [id]);
+
+  async function saveRestaurantDetails(event: FormEvent) {
+    event.preventDefault();
+    if (!restaurant) return;
+    setSavingDetails(true);
+    setError("");
+    try {
+      const response = await fetch(`/api/admin/restaurants/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: restaurant.name,
+          description: restaurant.description,
+          phone: restaurant.phone,
+          whatsapp: restaurant.whatsapp,
+          address: restaurant.address,
+          area: restaurant.area,
+          imageUrl: restaurant.imageUrl,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || "Unable to update restaurant details.");
+      setRestaurant(result.restaurant);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to update restaurant details.");
+    } finally {
+      setSavingDetails(false);
+    }
+  }
 
   async function addMenuItem(
     event: FormEvent
@@ -149,6 +192,7 @@ export default function RestaurantPage() {
         ...current,
         data
       ]);
+      setMenuPage(0);
 
       setItemName("");
       setItemDescription("");
@@ -310,6 +354,22 @@ export default function RestaurantPage() {
         </div>
       )}
 
+      {restaurant && (
+        <form onSubmit={saveRestaurantDetails} className="mt-6 rounded-2xl border border-neutral-200 bg-white p-6">
+          <h2 className="font-medium">Restaurant details</h2>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <label className="text-sm font-medium">Name<input required value={restaurant.name} onChange={(event) => setRestaurant({ ...restaurant, name: event.target.value })} className="mt-2 w-full rounded-xl border border-neutral-300 px-4 py-3" /></label>
+            <label className="text-sm font-medium">Area<input required value={restaurant.area} onChange={(event) => setRestaurant({ ...restaurant, area: event.target.value })} className="mt-2 w-full rounded-xl border border-neutral-300 px-4 py-3" /></label>
+            <label className="text-sm font-medium">Phone<input required value={restaurant.phone} onChange={(event) => setRestaurant({ ...restaurant, phone: event.target.value })} className="mt-2 w-full rounded-xl border border-neutral-300 px-4 py-3" /></label>
+            <label className="text-sm font-medium">WhatsApp<input value={restaurant.whatsapp ?? ""} onChange={(event) => setRestaurant({ ...restaurant, whatsapp: event.target.value || null })} className="mt-2 w-full rounded-xl border border-neutral-300 px-4 py-3" /></label>
+            <label className="text-sm font-medium">Address<input value={restaurant.address ?? ""} onChange={(event) => setRestaurant({ ...restaurant, address: event.target.value || null })} className="mt-2 w-full rounded-xl border border-neutral-300 px-4 py-3" /></label>
+            <label className="text-sm font-medium">Image URL<input value={restaurant.imageUrl ?? ""} onChange={(event) => setRestaurant({ ...restaurant, imageUrl: event.target.value || null })} className="mt-2 w-full rounded-xl border border-neutral-300 px-4 py-3" /></label>
+            <label className="text-sm font-medium sm:col-span-2">Description<textarea rows={3} value={restaurant.description ?? ""} onChange={(event) => setRestaurant({ ...restaurant, description: event.target.value || null })} className="mt-2 w-full rounded-xl border border-neutral-300 px-4 py-3" /></label>
+          </div>
+          <button disabled={savingDetails} className="mt-4 rounded-xl bg-black px-5 py-3 text-sm font-medium text-white disabled:opacity-50">{savingDetails ? "Saving…" : "Save details"}</button>
+        </form>
+      )}
+
       <div className="mt-10 grid gap-6 lg:grid-cols-[1fr_360px]">
         <section className="rounded-2xl border border-neutral-200 bg-white">
           <div className="flex items-center justify-between border-b border-neutral-200 p-5">
@@ -335,8 +395,20 @@ export default function RestaurantPage() {
               </p>
             </div>
           ) : (
-            <div className="divide-y divide-neutral-200">
-              {items.map((item) => (
+            <>
+            <div className="border-b border-neutral-200 p-4">
+              <input
+                value={menuSearch}
+                onChange={(event) => { setMenuSearch(event.target.value); setMenuPage(0); }}
+                placeholder="Search menu items"
+                aria-label="Search menu items"
+                className="w-full rounded-xl border border-neutral-300 px-4 py-2.5 text-sm"
+              />
+            </div>
+            {visibleItems.length === 0 ? (
+              <p className="p-6 text-sm text-neutral-500">No items match this search.</p>
+            ) : <div className="divide-y divide-neutral-200">
+              {visibleItems.map((item) => (
                 <div
                   key={item.id}
                   className="flex items-center justify-between gap-6 p-5"
@@ -353,10 +425,7 @@ export default function RestaurantPage() {
                     )}
 
                     <p className="mt-2 text-sm font-medium">
-                      ₹
-                      {item.price.toFixed(
-                        0
-                      )}
+                      {new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(item.price)}
                     </p>
                   </div>
 
@@ -387,7 +456,15 @@ export default function RestaurantPage() {
                   </div>
                 </div>
               ))}
+            </div>}
+            <div className="flex items-center justify-between border-t border-neutral-200 p-4 text-sm">
+              <span className="text-neutral-500">{filteredItems.length} items · page {menuPage + 1} of {menuPageCount}</span>
+              <div className="flex gap-2">
+                <button type="button" disabled={menuPage === 0} onClick={() => setMenuPage((page) => Math.max(0, page - 1))} className="rounded-lg border px-3 py-2 disabled:opacity-40">Previous</button>
+                <button type="button" disabled={menuPage + 1 >= menuPageCount} onClick={() => setMenuPage((page) => Math.min(menuPageCount - 1, page + 1))} className="rounded-lg border px-3 py-2 disabled:opacity-40">Next</button>
+              </div>
             </div>
+            </>
           )}
         </section>
 

@@ -58,6 +58,8 @@ export default function AdminShell({
 
             <Link href="/admin/orders">Orders</Link>
 
+            <Link href="/admin/commissions">Commissions</Link>
+
             <button
               type="button"
               onClick={handleLogout}

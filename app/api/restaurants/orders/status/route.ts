@@ -5,7 +5,7 @@ import {
   eq
 } from "drizzle-orm";
 
-import { db } from "@/db";
+import { db, withDatabaseTransaction } from "@/db";
 
 import {
   orders,
@@ -15,10 +15,43 @@ import {
 import {
   getRestaurantSession
 } from "@/lib/auth";
+import { enqueueWhatsappMessage } from "@/lib/whatsapp-outbox";
+import type { WhatsappPayload } from "@/lib/whatsapp-outbox";
+import { transitionAndEnqueueNotification } from "@/lib/order-notifications";
 
-import {
-  sendText
-} from "@/lib/whatsapp";
+async function transitionOrder(
+  orderId: number,
+  restaurantId: number,
+  oldStatus: string,
+  newStatus: string,
+  notification?: { key: string; recipient: string; payload: WhatsappPayload },
+) {
+  return withDatabaseTransaction(async () => {
+    return transitionAndEnqueueNotification(
+      async () => {
+        const updated = await db
+          .update(orders)
+          .set({ status: newStatus })
+          .where(and(
+            eq(orders.id, orderId),
+            eq(orders.restaurantId, restaurantId),
+            eq(orders.status, oldStatus),
+          ))
+          .returning({ id: orders.id });
+        return updated.length > 0;
+      },
+      async () => {
+        if (notification) {
+          await enqueueWhatsappMessage(
+            notification.key,
+            notification.recipient,
+            notification.payload,
+          );
+        }
+      },
+    );
+  });
+}
 
 export async function POST(
   request: Request
@@ -200,51 +233,6 @@ export async function POST(
       order.status === "NEW" &&
       newStatus === "ACCEPTED"
     ) {
-      const updated =
-        await db
-          .update(orders)
-          .set({
-            status:
-              "ACCEPTED"
-          })
-          .where(
-            and(
-              eq(
-                orders.id,
-                orderId
-              ),
-              eq(
-                orders.restaurantId,
-                session.restaurantId
-              ),
-              eq(
-                orders.status,
-                "NEW"
-              )
-            )
-          )
-          .returning({
-            id: orders.id
-          });
-
-      if (
-        updated.length === 0
-      ) {
-        return NextResponse.json(
-          {
-            error:
-              "This order has already been updated."
-          },
-          {
-            status: 409
-          }
-        );
-      }
-
-      /*
-       * Fetch restaurant information
-       * for the customer confirmation.
-       */
       const restaurantRows =
         await db
           .select()
@@ -261,12 +249,16 @@ export async function POST(
         restaurantRows[0];
 
       if (!restaurant) {
-        return NextResponse.json({
-          success: true,
-          status: "ACCEPTED",
-          warning:
-            "Order accepted, but restaurant information could not be loaded."
-        });
+        const updated = await transitionOrder(
+          orderId,
+          session.restaurantId,
+          "NEW",
+          "ACCEPTED",
+        );
+        if (!updated) {
+          return NextResponse.json({ error: "This order has already been updated." }, { status: 409 });
+        }
+        return NextResponse.json({ success: true, status: "ACCEPTED", notificationQueued: false });
       }
 
       /*
@@ -289,130 +281,79 @@ export async function POST(
           "Thank you for ordering with *OffMenu* ❤️"
         ].join("\n");
 
-      try {
-        await sendText(
-          order.customerPhone,
-          confirmationMessage
-        );
-      } catch {
-        /*
-         * The order is still ACCEPTED even if
-         * WhatsApp delivery fails.
-         *
-         * We don't roll back the acceptance because
-         * the restaurant has already accepted the order.
-         */
-        return NextResponse.json({
-          success: true,
-          status: "ACCEPTED",
-          warning:
-            "Order accepted, but WhatsApp confirmation could not be sent."
-        });
+      const updated = await transitionOrder(
+        orderId,
+        session.restaurantId,
+        "NEW",
+        "ACCEPTED",
+        {
+          key: `order:${order.id}:accepted`,
+          recipient: order.customerPhone,
+          payload: { type: "text", text: { body: confirmationMessage } },
+        },
+      );
+      if (!updated) {
+        return NextResponse.json({ error: "This order has already been updated." }, { status: 409 });
       }
 
       return NextResponse.json({
         success: true,
-        status: "ACCEPTED"
+        status: "ACCEPTED",
+        notificationQueued: true,
       });
     }
 
-    /*
-     * All other status transitions update the
-     * order normally.
-     */
-    await db
-      .update(orders)
-      .set({
-        status: newStatus
-      })
-      .where(
-        and(
-          eq(
-            orders.id,
-            orderId
-          ),
-          eq(
-            orders.restaurantId,
-            session.restaurantId
-          )
-        )
-      );
+    let notification: { key: string; recipient: string; payload: WhatsappPayload } | undefined;
+    let warning: string | undefined;
 
-    /*
-     * When the restaurant marks the order
-     * OUT_FOR_DELIVERY, immediately notify
-     * the customer on WhatsApp.
-     *
-     * The database status is updated first.
-     * If WhatsApp fails, the order remains
-     * OUT_FOR_DELIVERY and we return a warning.
-     */
-    if (
-      newStatus ===
-      "OUT_FOR_DELIVERY"
-    ) {
-      const restaurantRows =
-        await db
-          .select()
-          .from(restaurants)
-          .where(
-            eq(
-              restaurants.id,
-              session.restaurantId
-            )
-          )
-          .limit(1);
-
-      const restaurant =
-        restaurantRows[0];
-
+    if (newStatus === "OUT_FOR_DELIVERY") {
+      const restaurantRows = await db.select().from(restaurants)
+        .where(eq(restaurants.id, session.restaurantId)).limit(1);
+      const restaurant = restaurantRows[0];
       if (!restaurant) {
-        return NextResponse.json({
-          success: true,
-          status: "OUT_FOR_DELIVERY",
-          warning:
-            "Order marked out for delivery, but restaurant information could not be loaded."
-        });
-      }
-
-      const outForDeliveryMessage =
-        [
-          "🛵 *ORDER OUT FOR DELIVERY*",
-          "",
-          `Order: *#${order.orderNumber}*`,
-          `Restaurant: *${restaurant.name}*`,
-          "",
-          "Your order is on the way! 🛵",
-          "",
-          "Please keep your phone available and be ready to receive your order.",
-          "",
-          "Thank you for ordering with *OffMenu* ❤️"
+        warning = "Order marked out for delivery, but restaurant information could not be loaded.";
+      } else {
+        const body = [
+          "🛵 *ORDER OUT FOR DELIVERY*", "", `Order: *#${order.orderNumber}*`,
+          `Restaurant: *${restaurant.name}*`, "", "Your order is on the way! 🛵", "",
+          "Please keep your phone available and be ready to receive your order.", "",
+          "Thank you for ordering with *OffMenu* ❤️",
         ].join("\n");
-
-      try {
-        await sendText(
-          order.customerPhone,
-          outForDeliveryMessage
-        );
-      } catch {
-        /*
-         * The order is already marked
-         * OUT_FOR_DELIVERY, so we do not
-         * roll back the status if WhatsApp
-         * delivery fails.
-         */
-        return NextResponse.json({
-          success: true,
-          status: "OUT_FOR_DELIVERY",
-          warning:
-            "Order marked out for delivery, but WhatsApp notification could not be sent."
-        });
+        notification = {
+          key: `order:${order.id}:out-for-delivery`,
+          recipient: order.customerPhone,
+          payload: { type: "text", text: { body } },
+        };
       }
+    } else if (newStatus === "DELIVERED") {
+      const body = [
+        "✅ *ORDER DELIVERED*", "", `Order: *#${order.orderNumber}*`, "",
+        "Your restaurant marked this order as delivered.",
+        "Thank you for ordering with *OffMenu*.",
+      ].join("\n");
+      notification = {
+        key: `order:${order.id}:delivered`,
+        recipient: order.customerPhone,
+        payload: { type: "text", text: { body } },
+      };
+    }
+
+    const updated = await transitionOrder(
+      orderId,
+      session.restaurantId,
+      order.status,
+      newStatus,
+      notification,
+    );
+    if (!updated) {
+      return NextResponse.json({ error: "This order has already been updated." }, { status: 409 });
     }
 
     return NextResponse.json({
       success: true,
-      status: newStatus
+      status: newStatus,
+      ...(notification ? { notificationQueued: true } : {}),
+      ...(warning ? { warning } : {}),
     });
 
   } catch (error) {

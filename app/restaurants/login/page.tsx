@@ -22,6 +22,8 @@ export default function RestaurantLoginPage() {
   const [loading, setLoading] =
     useState(false);
 
+  const [showPassword, setShowPassword] = useState(false);
+
   async function handleSubmit(
     event: FormEvent
   ) {
@@ -114,23 +116,31 @@ export default function RestaurantLoginPage() {
           </div>
 
           <div>
-            <label className="text-sm font-medium">
+            <label htmlFor="restaurant-password" className="text-sm font-medium">
               Password
             </label>
 
-            <input
-              type="password"
-              value={password}
-              onChange={(event) =>
-                setPassword(
-                  event.target.value
-                )
-              }
-              placeholder="Password"
-              autoComplete="current-password"
-              className="mt-2 w-full rounded-xl border border-neutral-300 px-4 py-3 outline-none focus:border-black"
-              required
-            />
+            <div className="mt-2 flex rounded-xl border border-neutral-300 focus-within:border-black">
+              <input
+                id="restaurant-password"
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="Password"
+                autoComplete="current-password"
+                className="min-w-0 flex-1 rounded-l-xl px-4 py-3 outline-none"
+                required
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((visible) => !visible)}
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-pressed={showPassword}
+                className="rounded-r-xl px-4 text-sm font-medium text-neutral-600 hover:bg-neutral-50"
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
           </div>
 
           {error && (

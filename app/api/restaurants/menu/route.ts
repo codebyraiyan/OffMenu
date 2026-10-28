@@ -16,6 +16,7 @@ import {
 import {
   getRestaurantSession
 } from "@/lib/auth";
+import { fromPaise, toMenuPricePaise } from "@/lib/fees";
 
 export async function POST(
   request: Request
@@ -50,13 +51,21 @@ export async function POST(
       body.description || ""
     ).trim();
 
-  const price =
+  const inputPrice =
     Number(body.price);
+  let price: number;
+  try {
+    price = fromPaise(toMenuPricePaise(inputPrice));
+  } catch {
+    return NextResponse.json(
+      { error: "Enter a positive price with at most two decimal places." },
+      { status: 400 },
+    );
+  }
 
   if (
     !name ||
-    !Number.isFinite(price) ||
-    price <= 0
+    !Number.isFinite(inputPrice)
   ) {
     return NextResponse.json(
       {
@@ -174,12 +183,20 @@ export async function PATCH(
   if (
     body.price !== undefined
   ) {
-    const price =
+    const inputPrice =
       Number(body.price);
+    let price: number;
+    try {
+      price = fromPaise(toMenuPricePaise(inputPrice));
+    } catch {
+      return NextResponse.json(
+        { error: "Enter a positive price with at most two decimal places." },
+        { status: 400 },
+      );
+    }
 
     if (
-      !Number.isFinite(price) ||
-      price <= 0
+      !Number.isFinite(inputPrice)
     ) {
       return NextResponse.json(
         {
@@ -199,10 +216,13 @@ export async function PATCH(
     body.isAvailable !==
     undefined
   ) {
-    updates.isAvailable =
-      Boolean(
-        body.isAvailable
+    if (typeof body.isAvailable !== "boolean") {
+      return NextResponse.json(
+        { error: "Availability must be a boolean." },
+        { status: 400 },
       );
+    }
+    updates.isAvailable = body.isAvailable;
   }
 
   if (

@@ -5,9 +5,14 @@ import {
 
 import { cookies } from "next/headers";
 
+const configuredSecret = process.env.ADMIN_SECRET;
+
+if (process.env.NODE_ENV === "production" && !configuredSecret) {
+  throw new Error("Missing ADMIN_SECRET in production.");
+}
+
 const secret = new TextEncoder().encode(
-  process.env.ADMIN_SECRET ||
-    "change-this-secret"
+  configuredSecret || "offmenu-local-development-secret"
 );
 
 const ADMIN_COOKIE_NAME =

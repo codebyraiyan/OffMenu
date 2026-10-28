@@ -16,6 +16,7 @@ import {
 import {
   isAdmin
 } from "@/lib/auth";
+import { fromPaise, toMenuPricePaise } from "@/lib/fees";
 
 export async function POST(
   request: Request,
@@ -95,15 +96,21 @@ export async function POST(
       body.description || ""
     ).trim();
 
-  const price =
+  const inputPrice =
     Number(body.price);
+  let price: number;
+  try {
+    price = fromPaise(toMenuPricePaise(inputPrice));
+  } catch {
+    return NextResponse.json(
+      { error: "Enter a positive price with at most two decimal places." },
+      { status: 400 },
+    );
+  }
 
   if (
     !name ||
-    !Number.isFinite(
-      price
-    ) ||
-    price <= 0
+    !Number.isFinite(inputPrice)
   ) {
     return NextResponse.json(
       {
