@@ -23,6 +23,13 @@ type ForeignKeyDefinition = {
   onDelete: string;
 };
 
+type ForeignKeyViolation = {
+  table: string;
+  rowid: string;
+  parent: string;
+  fkid: string;
+};
+
 const legacyTables = [
   "categories",
   "menu_items",
@@ -326,6 +333,84 @@ async function verifyForeignKeys(
   }
 }
 
+async function getForeignKeyViolations(
+  transaction: Transaction,
+): Promise<ForeignKeyViolation[]> {
+  const result = await rows(transaction, "PRAGMA foreign_key_check");
+
+  return result.map((row) => ({
+    table: String(row.table),
+    rowid: String(row.rowid),
+    parent: String(row.parent),
+    fkid: String(row.fkid),
+  }));
+}
+
+function violationKey(violation: ForeignKeyViolation) {
+  return JSON.stringify([
+    violation.table,
+    violation.rowid,
+    violation.parent,
+    violation.fkid,
+  ]);
+}
+
+/**
+ * Rejects any violation not present in the baseline snapshot.
+ * Multiplicity is counted, so an additional duplicate violation is rejected.
+ */
+function assertNoNewForeignKeyViolations(
+  baseline: ForeignKeyViolation[],
+  current: ForeignKeyViolation[],
+) {
+  const remainingBaselineCounts = new Map<string, number>();
+
+  for (const violation of baseline) {
+    const key = violationKey(violation);
+    remainingBaselineCounts.set(
+      key,
+      (remainingBaselineCounts.get(key) ?? 0) + 1,
+    );
+  }
+
+  const newViolations: ForeignKeyViolation[] = [];
+
+  for (const violation of current) {
+    const key = violationKey(violation);
+    const remaining = remainingBaselineCounts.get(key) ?? 0;
+
+    if (remaining > 0) {
+      remainingBaselineCounts.set(key, remaining - 1);
+    } else {
+      newViolations.push(violation);
+    }
+  }
+
+  if (newViolations.length > 0) {
+    const details = newViolations
+      .map(
+        (item) =>
+          `${item.table} rowid=${item.rowid} parent=${item.parent} fkid=${item.fkid}`,
+      )
+      .join("; ");
+
+    throw new Error(
+      `Migration introduced new foreign-key violations; the migration was rolled back. ${details}`,
+    );
+  }
+
+  const remaining = [...remainingBaselineCounts.values()].reduce(
+    (sum, count) => sum + count,
+    0,
+  );
+
+  if (remaining > 0) {
+    throw new Error(
+      "Existing foreign-key violations changed during migration; the migration was rolled back.",
+    );
+  }
+}
+
 async function ensureIndexes(
   transaction: Transaction,
   indexes: IndexDefinition[],
@@ -424,7 +509,8 @@ async function verifyFinalMigrationLedger(
 
 /**
  * Initializes an empty database or additively reconciles the known legacy
- * application schema. Unknown or partial installations fail before commit.
+ * application schema. Existing data violations are preserved as a baseline;
+ * the migration may not introduce new violations or alter that baseline.
  */
 export async function migrateDatabase(
   client: Client,
@@ -447,6 +533,12 @@ export async function migrateDatabase(
 
     const isFresh = applicationTables.size === 0;
     const hasLedger = await verifyMigrationLedger(transaction, checksum);
+
+    // Snapshot legacy data-integrity violations before schema changes.
+    // A fresh database has no pre-existing violations to grandfather.
+    const baselineViolations = isFresh
+      ? []
+      : await getForeignKeyViolations(transaction);
 
     if (isFresh) {
       if (hasLedger) {
@@ -556,18 +648,20 @@ export async function migrateDatabase(
       args: [migrationVersion, checksum, Date.now()],
     });
 
-    // Verify the committed candidate ledger state before committing the
-    // transaction. Any mismatch causes the whole migration to roll back.
     await verifyFinalMigrationLedger(transaction, checksum);
 
-    const foreignKeyViolations = await rows(
-      transaction,
-      "PRAGMA foreign_key_check",
-    );
+    const currentViolations = await getForeignKeyViolations(transaction);
 
-    if (foreignKeyViolations.length > 0) {
-      throw new Error(
-        "Foreign-key check failed; the migration was rolled back.",
+    if (isFresh) {
+      if (currentViolations.length > 0) {
+        throw new Error(
+          "Fresh database failed its foreign-key check; the migration was rolled back.",
+        );
+      }
+    } else {
+      assertNoNewForeignKeyViolations(
+        baselineViolations,
+        currentViolations,
       );
     }
 
